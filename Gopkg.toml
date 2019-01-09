@@ -1,0 +1,7 @@
+[[constraint]]
+	name = "gitlab.com/vredens/go-logger"
+	version = "^v1.3.1"
+
+[prune]
+  go-tests = true
+  unused-packages = true
