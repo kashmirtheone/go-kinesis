@@ -113,7 +113,7 @@ me@ubuntu:~$ kinesis head -s some_stream -n 20
 
 ## Future Improvements
 
-- [ ] Handle correctly will publishing a batch
-- [ ] Split or merge runners while resharding
+- [x] Split or merge runners while resharding
 - [x] Decouple logger
 - [ ] Add metrics
+- [ ] Handle correctly while publishing a batch

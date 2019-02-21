@@ -1,6 +1,7 @@
 package kinesis
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -13,10 +14,11 @@ import (
 	"github.com/pkg/errors"
 )
 
-func TestRunner_Process_FailsToGetLastCheckpoint(t *testing.T) {
+func TestRunner_Closed(t *testing.T) {
 	RegisterTestingT(t)
 
 	// Assign
+	ctx := context.TODO()
 	checkpoint := &mocks.Checkpoint{}
 	kinesisAPI := &mocks.KinesisAPI{}
 	r := runner{
@@ -26,12 +28,36 @@ func TestRunner_Process_FailsToGetLastCheckpoint(t *testing.T) {
 		stream:             "some_stream",
 		group:              "some_group",
 		tick:               time.Hour,
-		logger:             DumbLogger,
 	}
 	checkpoint.On("Get", r.checkpointIdentifier()).Return("", errors.New("something failed"))
 
 	// Act
-	err := r.process()
+	err := r.process(ctx)
+
+	// Assert
+	Expect(err).ToNot(HaveOccurred())
+	Expect(checkpoint.AssertExpectations(t)).To(BeTrue(), "Should try to get last sequence")
+}
+
+func TestRunner_Process_FailsToGetLastCheckpoint(t *testing.T) {
+	RegisterTestingT(t)
+
+	// Assign
+	ctx := context.TODO()
+	checkpoint := &mocks.Checkpoint{}
+	kinesisAPI := &mocks.KinesisAPI{}
+	r := runner{
+		client:             kinesisAPI,
+		checkpoint:         checkpoint,
+		checkpointStrategy: AfterRecordBatch,
+		stream:             "some_stream",
+		group:              "some_group",
+		tick:               time.Hour,
+	}
+	checkpoint.On("Get", r.checkpointIdentifier()).Return("", errors.New("something failed"))
+
+	// Act
+	err := r.process(ctx)
 
 	// Assert
 	Expect(err).ToNot(HaveOccurred())
@@ -42,6 +68,7 @@ func TestRunner_Process_FailsGettingShardIterator(t *testing.T) {
 	RegisterTestingT(t)
 
 	// Assign
+	ctx := context.TODO()
 	checkpoint := &mocks.Checkpoint{}
 	kinesisAPI := &mocks.KinesisAPI{}
 	r := runner{
@@ -51,7 +78,6 @@ func TestRunner_Process_FailsGettingShardIterator(t *testing.T) {
 		stream:             "some_stream",
 		group:              "some_group",
 		tick:               time.Hour,
-		logger:             DumbLogger,
 	}
 	getShardIteratorInput := &kinesis.GetShardIteratorInput{
 		ShardId:                aws.String(r.shardID),
@@ -60,10 +86,10 @@ func TestRunner_Process_FailsGettingShardIterator(t *testing.T) {
 		StartingSequenceNumber: aws.String("some_sequence_number"),
 	}
 	checkpoint.On("Get", r.checkpointIdentifier()).Return("some_sequence_number", nil)
-	kinesisAPI.On("GetShardIterator", getShardIteratorInput).Return(nil, errors.New("something failed"))
+	kinesisAPI.On("GetShardIteratorWithContext", ctx, getShardIteratorInput).Return(nil, errors.New("something failed"))
 
 	// Act
-	err := r.process()
+	err := r.process(ctx)
 
 	// Assert
 	Expect(err).ToNot(HaveOccurred())
@@ -74,6 +100,7 @@ func TestRunner_Process_FailsGettingRecords(t *testing.T) {
 	RegisterTestingT(t)
 
 	// Assign
+	ctx := context.TODO()
 	checkpoint := &mocks.Checkpoint{}
 	kinesisAPI := &mocks.KinesisAPI{}
 	r := runner{
@@ -83,7 +110,6 @@ func TestRunner_Process_FailsGettingRecords(t *testing.T) {
 		stream:             "some_stream",
 		group:              "some_group",
 		tick:               time.Hour,
-		logger:             DumbLogger,
 	}
 	getShardIteratorInput := &kinesis.GetShardIteratorInput{
 		ShardId:                aws.String(r.shardID),
@@ -96,11 +122,11 @@ func TestRunner_Process_FailsGettingRecords(t *testing.T) {
 		ShardIterator: getShardIteratorOutput.ShardIterator,
 	}
 	checkpoint.On("Get", r.checkpointIdentifier()).Return("some_sequence_number", nil)
-	kinesisAPI.On("GetShardIterator", getShardIteratorInput).Return(getShardIteratorOutput, nil)
-	kinesisAPI.On("GetRecords", getRecordsInput).Return(nil, errors.New("something failed"))
+	kinesisAPI.On("GetShardIteratorWithContext", ctx, getShardIteratorInput).Return(getShardIteratorOutput, nil)
+	kinesisAPI.On("GetRecordsWithContext", ctx, getRecordsInput).Return(nil, errors.New("something failed"))
 
 	// Act
-	err := r.process()
+	err := r.process(ctx)
 
 	// Assert
 	Expect(err).ToNot(HaveOccurred())
@@ -111,8 +137,10 @@ func TestRunner_Process_ShardClosedDoNothing(t *testing.T) {
 	RegisterTestingT(t)
 
 	// Assign
+	ctx := context.TODO()
 	checkpoint := &mocks.Checkpoint{}
 	kinesisAPI := &mocks.KinesisAPI{}
+	closed := false
 	r := runner{
 		client:             kinesisAPI,
 		checkpoint:         checkpoint,
@@ -120,7 +148,9 @@ func TestRunner_Process_ShardClosedDoNothing(t *testing.T) {
 		stream:             "some_stream",
 		group:              "some_group",
 		tick:               time.Hour,
-		logger:             DumbLogger,
+		shutdown: func() {
+			closed = true
+		},
 	}
 	getShardIteratorInput := &kinesis.GetShardIteratorInput{
 		ShardId:                aws.String(r.shardID),
@@ -134,14 +164,15 @@ func TestRunner_Process_ShardClosedDoNothing(t *testing.T) {
 	}
 	getRecordsOutput := &kinesis.GetRecordsOutput{NextShardIterator: nil}
 	checkpoint.On("Get", r.checkpointIdentifier()).Return("some_sequence_number", nil)
-	kinesisAPI.On("GetShardIterator", getShardIteratorInput).Return(getShardIteratorOutput, nil)
-	kinesisAPI.On("GetRecords", getRecordsInput).Return(getRecordsOutput, nil)
+	kinesisAPI.On("GetShardIteratorWithContext", ctx, getShardIteratorInput).Return(getShardIteratorOutput, nil)
+	kinesisAPI.On("GetRecordsWithContext", ctx, getRecordsInput).Return(getRecordsOutput, nil)
 
 	// Act
-	err := r.process()
+	err := r.process(ctx)
 
 	// Assert
 	Expect(err).ToNot(HaveOccurred())
+	Expect(closed).To(BeTrue())
 	Expect(kinesisAPI.AssertExpectations(t)).To(BeTrue(), "Should try to get records")
 }
 
@@ -149,6 +180,7 @@ func TestRunner_Process_FailsHandleRecord(t *testing.T) {
 	RegisterTestingT(t)
 
 	// Assign
+	ctx := context.TODO()
 	checkpoint := &mocks.Checkpoint{}
 	kinesisAPI := &mocks.KinesisAPI{}
 	r := runner{
@@ -159,7 +191,6 @@ func TestRunner_Process_FailsHandleRecord(t *testing.T) {
 		group:              "some_group",
 		tick:               time.Hour,
 		handler:            func(Message) error { return errors.New("something failed") },
-		logger:             DumbLogger,
 	}
 	getShardIteratorInput := &kinesis.GetShardIteratorInput{
 		ShardId:                aws.String(r.shardID),
@@ -174,12 +205,12 @@ func TestRunner_Process_FailsHandleRecord(t *testing.T) {
 	record := &kinesis.Record{PartitionKey: aws.String("some_partition"), Data: []byte("some_data"), SequenceNumber: aws.String("some_sequence_number2")}
 	getRecordsOutput := &kinesis.GetRecordsOutput{NextShardIterator: aws.String("some_shard_iterator"), Records: []*kinesis.Record{record}}
 	checkpoint.On("Get", r.checkpointIdentifier()).Return("some_sequence_number", nil)
-	kinesisAPI.On("GetShardIterator", getShardIteratorInput).Return(getShardIteratorOutput, nil)
-	kinesisAPI.On("GetRecords", getRecordsInput).Return(getRecordsOutput, nil)
+	kinesisAPI.On("GetShardIteratorWithContext", ctx, getShardIteratorInput).Return(getShardIteratorOutput, nil)
+	kinesisAPI.On("GetRecordsWithContext", ctx, getRecordsInput).Return(getRecordsOutput, nil)
 	checkpoint.On("Set", r.checkpointIdentifier(), "some_sequence_number").Return(errors.New("something failed"))
 
 	// Act
-	err := r.process()
+	err := r.process(ctx)
 
 	// Assert
 	Expect(err).ToNot(HaveOccurred())
@@ -190,6 +221,7 @@ func TestRunner_Process_HandlesWithSuccess(t *testing.T) {
 	RegisterTestingT(t)
 
 	// Assign
+	ctx := context.TODO()
 	checkpoint := &mocks.Checkpoint{}
 	kinesisAPI := &mocks.KinesisAPI{}
 	r := runner{
@@ -200,7 +232,6 @@ func TestRunner_Process_HandlesWithSuccess(t *testing.T) {
 		group:              "some_group",
 		tick:               time.Hour,
 		handler:            func(Message) error { return nil },
-		logger:             DumbLogger,
 	}
 	getShardIteratorInput := &kinesis.GetShardIteratorInput{
 		ShardId:                aws.String(r.shardID),
@@ -215,12 +246,12 @@ func TestRunner_Process_HandlesWithSuccess(t *testing.T) {
 	record := &kinesis.Record{PartitionKey: aws.String("some_partition"), Data: []byte("some_data"), SequenceNumber: aws.String("some_sequence_number2")}
 	getRecordsOutput := &kinesis.GetRecordsOutput{NextShardIterator: aws.String("some_shard_iterator"), Records: []*kinesis.Record{record}}
 	checkpoint.On("Get", r.checkpointIdentifier()).Return("some_sequence_number", nil)
-	kinesisAPI.On("GetShardIterator", getShardIteratorInput).Return(getShardIteratorOutput, nil)
-	kinesisAPI.On("GetRecords", getRecordsInput).Return(getRecordsOutput, nil)
+	kinesisAPI.On("GetShardIteratorWithContext", ctx, getShardIteratorInput).Return(getShardIteratorOutput, nil)
+	kinesisAPI.On("GetRecordsWithContext", ctx, getRecordsInput).Return(getRecordsOutput, nil)
 	checkpoint.On("Set", r.checkpointIdentifier(), "some_sequence_number2").Return(errors.New("something failed"))
 
 	// Act
-	err := r.process()
+	err := r.process(ctx)
 
 	// Assert
 	Expect(err).ToNot(HaveOccurred())
@@ -231,6 +262,7 @@ func TestRunner_Process_HandlesWithSuccessAfterRecordStrategy(t *testing.T) {
 	RegisterTestingT(t)
 
 	// Assign
+	ctx := context.TODO()
 	checkpoint := &mocks.Checkpoint{}
 	kinesisAPI := &mocks.KinesisAPI{}
 	r := runner{
@@ -241,7 +273,6 @@ func TestRunner_Process_HandlesWithSuccessAfterRecordStrategy(t *testing.T) {
 		group:              "some_group",
 		tick:               time.Hour,
 		handler:            func(Message) error { return nil },
-		logger:             DumbLogger,
 	}
 	getShardIteratorInput := &kinesis.GetShardIteratorInput{
 		ShardId:                aws.String(r.shardID),
@@ -256,12 +287,12 @@ func TestRunner_Process_HandlesWithSuccessAfterRecordStrategy(t *testing.T) {
 	record := &kinesis.Record{PartitionKey: aws.String("some_partition"), Data: []byte("some_data"), SequenceNumber: aws.String("some_sequence_number2")}
 	getRecordsOutput := &kinesis.GetRecordsOutput{NextShardIterator: aws.String("some_shard_iterator"), Records: []*kinesis.Record{record}}
 	checkpoint.On("Get", r.checkpointIdentifier()).Return("some_sequence_number", nil)
-	kinesisAPI.On("GetShardIterator", getShardIteratorInput).Return(getShardIteratorOutput, nil)
-	kinesisAPI.On("GetRecords", getRecordsInput).Return(getRecordsOutput, nil)
+	kinesisAPI.On("GetShardIteratorWithContext", ctx, getShardIteratorInput).Return(getShardIteratorOutput, nil)
+	kinesisAPI.On("GetRecordsWithContext", ctx, getRecordsInput).Return(getRecordsOutput, nil)
 	checkpoint.On("Set", r.checkpointIdentifier(), "some_sequence_number2").Return(errors.New("something failed"))
 
 	// Act
-	err := r.process()
+	err := r.process(ctx)
 
 	// Assert
 	Expect(err).ToNot(HaveOccurred())

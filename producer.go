@@ -17,17 +17,17 @@ type Producer struct {
 }
 
 // NewProducer creates a new kinesis producer
-func NewProducer(config ProducerConfig) (Producer, error) {
+func NewProducer(config ProducerConfig) (*Producer, error) {
 	if err := config.validate(); err != nil {
-		return Producer{}, errors.Wrap(err, "invalid kinesis configuration")
+		return nil, errors.Wrap(err, "invalid kinesis configuration")
 	}
 
 	client, err := NewClient(config.AWS)
 	if err != nil {
-		return Producer{}, errors.Wrap(err, "failed to create a kinesis client")
+		return nil, errors.Wrap(err, "failed to create a kinesis client")
 	}
 
-	return Producer{
+	return &Producer{
 		client: client,
 		stream: config.Stream,
 	}, nil

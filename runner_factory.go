@@ -1,44 +1,40 @@
 package kinesis
 
 import (
+	"context"
 	"fmt"
+	"github.com/pkg/errors"
 	"time"
-
-	"gitlab.com/marcoxavier/go-kinesis/internal/worker"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/kinesis"
-	"github.com/pkg/errors"
-	"golang.org/x/sync/errgroup"
-
 	"github.com/aws/aws-sdk-go/service/kinesis/kinesisiface"
 )
 
 // runnerFactory periodic checks shard status an notifies if is deleting.
 type runnerFactory struct {
-	worker.Worker
-	runners            map[string]*runner
-	handler            MessageHandler
-	checkpoint         Checkpoint
-	group              string
-	stream             string
-	tick               time.Duration
-	runnerTick         time.Duration
-	runnerIteratorType string
-	checkpointStrategy CheckpointStrategy
-	client             kinesisiface.KinesisAPI
-	logger             Logger
+	runners             map[string]*runner
+	handler             MessageHandler
+	checkpoint          Checkpoint
+	group               string
+	stream              string
+	tick                time.Duration
+	runnerTick          time.Duration
+	runnerIteratorType  string
+	checkpointStrategy  CheckpointStrategy
+	client              kinesisiface.KinesisAPI
+	skipReshardingOrder bool
 }
 
-func (f *runnerFactory) checkShards() error {
+func (f *runnerFactory) checkShards(ctx context.Context) error {
 	input := &kinesis.ListShardsInput{
 		StreamName: aws.String(f.stream),
 	}
 
-	f.logger(Debug, "fetching shards", nil)
-	result, err := f.client.ListShards(input)
+	log(Debug, nil, "fetching shards")
+	result, err := f.client.ListShardsWithContext(ctx, input)
 	if err != nil {
-		f.logger(Error, "failed to fetch shards", LoggerData{"cause": fmt.Sprintf("%v", err)})
+		log(Error, loggerData{"cause": fmt.Sprintf("%v", err)}, "failed to fetch shards")
 		return nil
 	}
 
@@ -47,8 +43,17 @@ func (f *runnerFactory) checkShards() error {
 			continue
 		}
 
-		f.logger(Debug, "creating new runner", LoggerData{"shard_id": *shard.ShardId})
-		r := runner{
+		if !f.skipReshardingOrder && !f.eligibleToStart(shard) {
+			log(
+				Debug,
+				loggerData{"shard_id": *shard.ShardId, "parent_shard_id": *shard.ParentShardId, "adjacent_shard_id": *shard.AdjacentParentShardId},
+				"runner not eligible to start, waiting for parent runners to close",
+			)
+			continue
+		}
+
+		log(Debug, loggerData{"shard_id": *shard.ShardId}, "creating new runner")
+		r := &runner{
 			client:             f.client,
 			handler:            f.handler,
 			shardID:            *shard.ShardId,
@@ -58,16 +63,15 @@ func (f *runnerFactory) checkShards() error {
 			checkpointStrategy: f.checkpointStrategy,
 			tick:               f.runnerTick,
 			iteratorType:       f.runnerIteratorType,
-			logger:             f.logger,
 		}
 
-		f.runners[*shard.ShardId] = &r
+		f.runners[*shard.ShardId] = r
 
-		f.logger(Info, "starting runner", LoggerData{"shard_id": *shard.ShardId})
 		go func() {
 			// TODO proper handler this error
-			if err := r.Start(); err != nil {
-				f.logger(Error, "failed start runner", LoggerData{"shard_id": *shard.ShardId})
+			log(Info, loggerData{"shard_id": r.shardID}, "starting runner")
+			if err := r.Start(ctx); err != nil {
+				log(Error, loggerData{"shard_id": r.shardID}, "failed start runner")
 			}
 		}()
 	}
@@ -75,31 +79,39 @@ func (f *runnerFactory) checkShards() error {
 	return nil
 }
 
-// Start starts runner factory.
-func (f *runnerFactory) Start() error {
-	notifier := worker.NewCronNotifier(f.tick)
-	f.Worker = worker.NewWorker(f.checkShards, worker.WithNotifier(notifier), worker.WithLogger(f.logger))
+func (f *runnerFactory) eligibleToStart(shard *kinesis.Shard) bool {
+	if shard.ParentShardId != nil {
+		parentRunner, exists := f.runners[*shard.ParentShardId]
+		if exists && !parentRunner.Closed() {
+			return false
+		}
+	}
 
-	return f.Worker.Start()
+	if shard.AdjacentParentShardId != nil {
+		parentRunner, exists := f.runners[*shard.AdjacentParentShardId]
+		if exists && !parentRunner.Closed() {
+			return false
+		}
+	}
+
+	return true
 }
 
-// Stop stops runner factory.
-func (f *runnerFactory) Stop() error {
-	if err := f.Worker.Stop(); err != nil {
-		return err
+// Run runs runner factory.
+func (f *runnerFactory) Run(ctx context.Context) error {
+	ticker := time.NewTicker(f.tick)
+	defer ticker.Stop()
+
+	for {
+		if err := f.checkShards(ctx); err != nil {
+			return errors.Wrap(err, "failed to check shards")
+		}
+
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+			continue
+		}
 	}
-
-	var g errgroup.Group
-
-	f.logger(Info, "stopping runners", nil)
-	for _, runner := range f.runners {
-		r := runner
-		g.Go(r.Stop)
-	}
-
-	if err := g.Wait(); err != nil {
-		return errors.Wrap(err, "failed to stop runner factory")
-	}
-
-	return nil
 }

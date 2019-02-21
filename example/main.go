@@ -2,17 +2,14 @@ package main
 
 import (
 	"fmt"
-	"os"
-	"os/signal"
 	"strconv"
-	"syscall"
-	"time"
 
-	"gitlab.com/vredens/go-logger"
+	logger "gitlab.com/vredens/go-logger"
 
 	"gitlab.com/marcoxavier/go-kinesis/checkpoint/memory"
+	"gitlab.com/marcoxavier/supervisor"
 
-	"gitlab.com/marcoxavier/go-kinesis"
+	kinesis "gitlab.com/marcoxavier/go-kinesis"
 )
 
 var log = logger.Spawn(logger.WithTags("kinesis-consumer"))
@@ -24,20 +21,20 @@ func handler(message kinesis.Message) error {
 }
 
 // Log logs kinesis consumer.
-func Log(level string, msg string, data map[string]interface{}) {
+func Log(level string, data map[string]interface{}, format string, args ...interface{}) {
 	switch level {
 	case kinesis.Debug:
-		log.WithData(data).Debug(msg)
+		log.WithData(data).Debugf(format, args...)
 	case kinesis.Info:
-		log.WithData(data).Info(msg)
+		log.WithData(data).Infof(format, args...)
 	case kinesis.Error:
-		log.WithData(data).Error(msg)
+		log.WithData(data).Errorf(format, args...)
 	}
 }
 
 func main() {
-	termChan := make(chan os.Signal, 1)
-	signal.Notify(termChan, syscall.SIGINT, syscall.SIGTERM)
+	s := supervisor.NewSupervisor()
+	s.SetLogger(Log)
 
 	config := kinesis.ConsumerConfig{
 		Group:  "test-consumer",
@@ -51,11 +48,13 @@ func main() {
 	checkpoint := memory.NewCheckpoint()
 	consumer, err := kinesis.NewConsumer(config, handler, checkpoint,
 		kinesis.WithCheckpointStrategy(kinesis.AfterRecord),
-		kinesis.WithLogger(Log),
 	)
 	if err != nil {
 		panic(err)
 	}
+	consumer.SetLogger(Log)
+
+	s.AddRunner("kinesis-consumer", consumer.Run)
 
 	go func() {
 		config := kinesis.ProducerConfig{
@@ -77,25 +76,10 @@ func main() {
 			messages = append(messages, kinesis.Message{Partition: strconv.Itoa(i), Data: []byte(msg)})
 		}
 
-		time.Sleep(time.Second * 2)
 		if err := producer.PublishBatch(messages); err != nil {
 			panic(err)
 		}
 	}()
 
-	errChan := make(chan error, 1)
-	go func() {
-		if err := consumer.Start(); err != nil {
-			errChan <- err
-		}
-	}()
-
-	select {
-	case <-termChan:
-		if err := consumer.Stop(); err != nil {
-			panic(err)
-		}
-	case <-errChan:
-		panic(err)
-	}
+	s.Start()
 }

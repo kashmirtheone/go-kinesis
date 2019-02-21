@@ -1,6 +1,7 @@
 package kinesis
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -20,20 +21,20 @@ func TestRunnerFactory_CheckShards_Failing(t *testing.T) {
 	RegisterTestingT(t)
 
 	// Assign
+	ctx := context.TODO()
 	kinesisAPI := &mocks.KinesisAPI{}
 	factory := runnerFactory{
 		client: kinesisAPI,
 		stream: "some_stream",
 		group:  "some_group",
-		logger: DumbLogger,
 	}
 	input := &kinesis.ListShardsInput{
 		StreamName: aws.String(factory.stream),
 	}
-	kinesisAPI.On("ListShards", input).Return(nil, errors.New("something failed"))
+	kinesisAPI.On("ListShardsWithContext", ctx, input).Return(nil, errors.New("something failed"))
 
 	// Act
-	err := factory.checkShards()
+	err := factory.checkShards(ctx)
 
 	// Assert
 	Expect(err).ToNot(HaveOccurred())
@@ -43,21 +44,21 @@ func TestRunnerFactory_CheckShards_DoNothing(t *testing.T) {
 	RegisterTestingT(t)
 
 	// Assign
+	ctx := context.TODO()
 	kinesisAPI := &mocks.KinesisAPI{}
 	factory := runnerFactory{
 		client: kinesisAPI,
 		stream: "some_stream",
 		group:  "some_group",
-		logger: DumbLogger,
 	}
 	input := &kinesis.ListShardsInput{
 		StreamName: aws.String(factory.stream),
 	}
 	output := &kinesis.ListShardsOutput{Shards: []*kinesis.Shard{}}
-	kinesisAPI.On("ListShards", input).Return(output, nil)
+	kinesisAPI.On("ListShardsWithContext", ctx, input).Return(output, nil)
 
 	// Act
-	err := factory.checkShards()
+	err := factory.checkShards(ctx)
 
 	// Assert
 	Expect(err).ToNot(HaveOccurred())
@@ -67,6 +68,7 @@ func TestRunnerFactory_CheckShards_CreateARunner(t *testing.T) {
 	RegisterTestingT(t)
 
 	// Assign
+	ctx := context.TODO()
 	checkpoint := &mocks.Checkpoint{}
 	kinesisAPI := &mocks.KinesisAPI{}
 	factory := runnerFactory{
@@ -77,7 +79,6 @@ func TestRunnerFactory_CheckShards_CreateARunner(t *testing.T) {
 		group:              "some_group",
 		runners:            make(map[string]*runner),
 		runnerTick:         time.Hour,
-		logger:             DumbLogger,
 	}
 	input := &kinesis.ListShardsInput{
 		StreamName: aws.String(factory.stream),
@@ -86,12 +87,12 @@ func TestRunnerFactory_CheckShards_CreateARunner(t *testing.T) {
 		ShardId: aws.String("some_shard_id"),
 	}
 	output := &kinesis.ListShardsOutput{Shards: []*kinesis.Shard{shard}}
-	kinesisAPI.On("ListShards", input).Return(output, nil)
+	kinesisAPI.On("ListShardsWithContext", ctx, input).Return(output, nil)
 	checkpoint.On("Get", mock.Anything).Return("", errors.New("something failed"))
 
 	// Act
-	err := factory.checkShards()
-	factory.Stop()
+	err := factory.checkShards(ctx)
+	//factory.Stop()
 
 	// Assert
 	Expect(err).ToNot(HaveOccurred())
@@ -107,6 +108,7 @@ func TestRunnerFactory_CheckShards_CreateARunnerWithSameShardID(t *testing.T) {
 	RegisterTestingT(t)
 
 	// Assign
+	ctx := context.TODO()
 	checkpoint := &mocks.Checkpoint{}
 	kinesisAPI := &mocks.KinesisAPI{}
 	factory := runnerFactory{
@@ -117,21 +119,22 @@ func TestRunnerFactory_CheckShards_CreateARunnerWithSameShardID(t *testing.T) {
 		group:              "some_group",
 		runners:            make(map[string]*runner),
 		runnerTick:         time.Hour,
-		logger:             DumbLogger,
 	}
 	input := &kinesis.ListShardsInput{
 		StreamName: aws.String(factory.stream),
 	}
-	shard := &kinesis.Shard{
+	shard1 := &kinesis.Shard{
 		ShardId: aws.String("some_shard_id"),
 	}
-	output := &kinesis.ListShardsOutput{Shards: []*kinesis.Shard{shard, shard}}
-	kinesisAPI.On("ListShards", input).Return(output, nil)
+	shard2 := &kinesis.Shard{
+		ShardId: aws.String("some_shard_id"),
+	}
+	output := &kinesis.ListShardsOutput{Shards: []*kinesis.Shard{shard1, shard2}}
+	kinesisAPI.On("ListShardsWithContext", ctx, input).Return(output, nil)
 	checkpoint.On("Get", mock.Anything).Return("", errors.New("something failed"))
 
 	// Act
-	err := factory.checkShards()
-	factory.Stop()
+	err := factory.checkShards(ctx)
 
 	// Assert
 	Expect(err).ToNot(HaveOccurred())

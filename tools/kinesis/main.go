@@ -1,9 +1,9 @@
 package main
 
 import (
-	"os"
+	"fmt"
 
-	"gitlab.com/vredens/go-logger"
+	logger "gitlab.com/vredens/go-logger"
 
 	"gitlab.com/marcoxavier/go-kinesis/tools/kinesis/head"
 	"gitlab.com/marcoxavier/go-kinesis/tools/kinesis/tail"
@@ -17,7 +17,6 @@ func main() {
 	rootCmd.AddCommand(head.Command())
 
 	if err := rootCmd.Execute(); err != nil {
-		logger.Errorf("error during initialization")
-		os.Exit(1)
+		logger.Errorf(fmt.Sprintf("%v", err))
 	}
 }

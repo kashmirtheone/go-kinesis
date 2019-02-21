@@ -3,7 +3,7 @@ package kinesis
 import (
 	"time"
 
-	"gopkg.in/validator.v2"
+	validator "gopkg.in/validator.v2"
 )
 
 const (

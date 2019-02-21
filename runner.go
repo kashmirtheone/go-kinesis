@@ -1,10 +1,9 @@
 package kinesis
 
 import (
+	"context"
 	"fmt"
 	"time"
-
-	"gitlab.com/marcoxavier/go-kinesis/internal/worker"
 
 	"github.com/aws/aws-sdk-go/aws/awserr"
 
@@ -22,7 +21,6 @@ const (
 
 // runner is a single goroutine capable to listen a shard.
 type runner struct {
-	worker.Worker
 	client             kinesisiface.KinesisAPI
 	handler            MessageHandler
 	shardID            string
@@ -32,22 +30,53 @@ type runner struct {
 	checkpoint         Checkpoint
 	checkpointStrategy CheckpointStrategy
 	iteratorType       string
-	logger             Logger
+	shutdown           context.CancelFunc
+	closed             bool
 }
 
-func (r *runner) process() error {
-	r.logger(Debug, "getting last checkpoint", nil)
+func (r *runner) Start(ctx context.Context) error {
+	mCtx, cancel := context.WithCancel(ctx)
+	r.shutdown = cancel
+
+	ticker := time.NewTicker(r.tick)
+	defer ticker.Stop()
+
+	for {
+		if err := r.process(mCtx); err != nil {
+			return errors.Wrap(err, "failed to process shard")
+		}
+
+		select {
+		case <-mCtx.Done():
+			return nil
+		case <-ticker.C:
+			continue
+		}
+	}
+}
+
+func (r *runner) Stop() error {
+	r.shutdown()
+	return nil
+}
+
+// Closed return if runner's shard is closed.
+func (r *runner) Closed() bool {
+	return r.closed
+}
+
+func (r *runner) process(ctx context.Context) error {
+	log(Debug, nil, "getting last checkpoint")
 	lastSequence, err := r.checkpoint.Get(r.checkpointIdentifier())
 	if err != nil {
-		r.logger(Error, "failed getting sequence number", LoggerData{"cause": fmt.Sprintf("%v", err)})
+		log(Error, nil, "failed getting sequence number", loggerData{"cause": fmt.Sprintf("%v", err)})
 		return nil
 	}
 
-	r.logger(Debug, "getting shard iterator", nil)
-	shardIterator, err := r.getShardIterator(lastSequence)
+	log(Debug, nil, "getting shard iterator")
+	shardIterator, err := r.getShardIterator(ctx, lastSequence)
 	if err != nil {
-		r.logger(Error, "error getting shard iterator", LoggerData{"cause": fmt.Sprintf("%v", err)})
-		r.Stop()
+		log(Error, loggerData{"cause": fmt.Sprintf("%v", err)}, "error getting shard iterator")
 		return nil
 	}
 
@@ -56,52 +85,49 @@ func (r *runner) process() error {
 	ticker := time.NewTicker(runnerTick)
 	defer ticker.Stop() // nolint
 
-	for range ticker.C {
-		if r.Worker.State() == worker.StateStopping {
-			return nil
-		}
-
-		r.logger(Debug, "getting records", nil)
-		resp, err := r.client.GetRecords(&kinesis.GetRecordsInput{
+	for {
+		log(Debug, nil, "getting records")
+		resp, err := r.client.GetRecordsWithContext(ctx, &kinesis.GetRecordsInput{
 			ShardIterator: shardIterator,
 		})
 		if err != nil {
 			aerr, ok := err.(awserr.Error)
 			if ok && aerr.Code() == kinesis.ErrCodeProvisionedThroughputExceededException {
-				r.logger(Info, "the request rate for the stream is too high or the requested Data is too large for the available throughput, waiting...", nil)
+				log(Info, nil, "the request rate for the stream is too high or the requested Data is too large for the available throughput, waiting...")
 
 				return nil
 			}
 
-			r.logger(Error, "error getting records", LoggerData{"cause": fmt.Sprintf("%v", err)})
+			log(Error, loggerData{"cause": fmt.Sprintf("%v", err)}, "error getting records")
 
 			return nil
 		}
 
 		if resp.NextShardIterator == nil {
-			r.logger(Info, "shard is closed, stopping runner", nil)
-			r.Stop()
+			log(Info, nil, "shard is closed, stopping runner")
+			r.closed = true
+			r.shutdown()
 
 			return nil
 		}
 
 		if len(resp.Records) <= 0 {
-			r.logger(Debug, "there is no records to process, jumping to next iteration", nil)
+			log(Debug, nil, "there is no records to process, jumping to next iteration")
 			shardIterator = resp.NextShardIterator
 
-			continue
+			goto next
 		}
 
-		r.logger(Debug, "processing records", nil)
+		log(Debug, nil, "processing records")
 		for _, record := range resp.Records {
 			if err := r.processRecord(record); err != nil {
-				resp.NextShardIterator, err = r.getShardIterator(lastSequence)
+				resp.NextShardIterator, err = r.getShardIterator(ctx, lastSequence)
 				if err != nil {
-					r.logger(Error, "error getting shard iterator", LoggerData{"cause": fmt.Sprintf("%v", err)})
+					log(Error, loggerData{"cause": fmt.Sprintf("%v", err)}, "error getting shard iterator")
 					return nil
 				}
 
-				r.logger(Error, "error handling message", LoggerData{"cause": fmt.Sprintf("%v", err)})
+				log(Error, loggerData{"cause": fmt.Sprintf("%v", err)}, "error handling message")
 
 				break
 			}
@@ -109,9 +135,9 @@ func (r *runner) process() error {
 			lastSequence = *record.SequenceNumber
 
 			if r.checkpointStrategy == AfterRecord {
-				r.logger(Debug, "setting checkpoint", nil)
+				log(Debug, nil, "setting checkpoint")
 				if err := r.checkpoint.Set(r.checkpointIdentifier(), lastSequence); err != nil {
-					r.logger(Error, "error setting sequence number", LoggerData{"cause": fmt.Sprintf("%v", err)})
+					log(Error, loggerData{"cause": fmt.Sprintf("%v", err)}, "error setting sequence number")
 
 					return nil
 				}
@@ -120,17 +146,23 @@ func (r *runner) process() error {
 
 		if r.checkpointStrategy == AfterRecordBatch {
 			if err := r.checkpoint.Set(r.checkpointIdentifier(), lastSequence); err != nil {
-				r.logger(Error, "error setting sequence number", LoggerData{"cause": fmt.Sprintf("%v", err)})
+				log(Error, loggerData{"cause": fmt.Sprintf("%v", err)}, "error setting sequence number")
 
 				return nil
 			}
 		}
 
 		shardIterator = resp.NextShardIterator
-		r.logger(Debug, "records processed", nil)
-	}
+		log(Debug, nil, "records processed")
 
-	return nil
+	next:
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+			continue
+		}
+	}
 }
 
 func (r *runner) processRecord(record *kinesis.Record) error {
@@ -143,7 +175,7 @@ func (r *runner) processRecord(record *kinesis.Record) error {
 	return nil
 }
 
-func (r *runner) getShardIterator(sequence string) (*string, error) {
+func (r *runner) getShardIterator(ctx context.Context, sequence string) (*string, error) {
 	getShardOptions := &kinesis.GetShardIteratorInput{
 		ShardId:           aws.String(r.shardID),
 		StreamName:        aws.String(r.stream),
@@ -156,7 +188,7 @@ func (r *runner) getShardIterator(sequence string) (*string, error) {
 			SetShardIteratorType(kinesis.ShardIteratorTypeAfterSequenceNumber)
 	}
 
-	iteratorOutput, err := r.client.GetShardIterator(getShardOptions)
+	iteratorOutput, err := r.client.GetShardIteratorWithContext(ctx, getShardOptions)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get shard iterator")
 	}
@@ -166,12 +198,4 @@ func (r *runner) getShardIterator(sequence string) (*string, error) {
 
 func (r *runner) checkpointIdentifier() string {
 	return fmt.Sprintf("%s_%s_%s", r.stream, r.group, r.shardID)
-}
-
-// Start starts runner.
-func (r *runner) Start() error {
-	notifier := worker.NewCronNotifier(r.tick)
-	r.Worker = worker.NewWorker(r.process, worker.WithNotifier(notifier), worker.WithLogger(r.logger))
-
-	return r.Worker.Start()
 }

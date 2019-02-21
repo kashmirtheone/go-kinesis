@@ -1,26 +1,39 @@
 package tail
 
 import (
-	"fmt"
+	"bufio"
+	"bytes"
+	"compress/gzip"
+	"io/ioutil"
 	"os"
-	"os/signal"
 	"sync/atomic"
-	"syscall"
 
-	"gitlab.com/vredens/go-logger"
+	"github.com/pkg/errors"
+
+	"gitlab.com/marcoxavier/supervisor"
+
+	logger "gitlab.com/vredens/go-logger"
 
 	"gitlab.com/marcoxavier/go-kinesis/checkpoint/memory"
 
-	"gitlab.com/marcoxavier/go-kinesis"
+	kinesis "gitlab.com/marcoxavier/go-kinesis"
 
 	"github.com/spf13/cobra"
 )
 
 var (
-	termChan  = make(chan os.Signal, 1)
+	s         = supervisor.NewSupervisor()
 	iteration int32
 
 	log = logger.Spawn(logger.WithTags("consumer"))
+
+	stream             string
+	endpoint           string
+	region             string
+	number             int
+	logging            bool
+	gzipDecode         bool
+	skiReshardingOrder bool
 )
 
 // Command creates a new command.
@@ -30,11 +43,13 @@ func Command() *cobra.Command {
 		Short: "The tail utility displays the contents of kinesis stream to the standard output, starting in the latest record.",
 		RunE:  Run,
 	}
-	cmd.Flags().StringP("stream", "s", "", "stream name")
-	cmd.Flags().StringP("endpoint", "e", "", "kinesis endpoint")
-	cmd.Flags().StringP("region", "r", "", "aws region, by default it will use AWS_REGION from aws config")
-	cmd.Flags().IntP("number", "n", 0, "number of messages to show")
-	cmd.Flags().Bool("logging", false, "enables logging, mute by default")
+	cmd.Flags().StringVarP(&stream, "stream", "s", "", "stream name")
+	cmd.Flags().StringVarP(&endpoint, "endpoint", "e", "", "kinesis endpoint")
+	cmd.Flags().StringVarP(&region, "region", "r", "", "aws region, by default it will use AWS_REGION from aws config")
+	cmd.Flags().IntVarP(&number, "number", "n", 0, "number of messages to show")
+	cmd.Flags().BoolVar(&logging, "logging", false, "enables logging, mute by default")
+	cmd.Flags().BoolVar(&gzipDecode, "gzip", false, "enables gzip decoder")
+	cmd.Flags().BoolVar(&skiReshardingOrder, "skip-resharding-order", false, "if enabled, consumer will skip ordering when resharding")
 
 	return cmd
 }
@@ -45,29 +60,7 @@ func Run(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// listen for termination signals
-	signal.Notify(termChan, syscall.SIGINT, syscall.SIGTERM)
-
-	stream, err := cmd.Flags().GetString("stream")
-	if err != nil {
-		return err
-	}
-	endpoint, err := cmd.Flags().GetString("endpoint")
-	if err != nil {
-		return err
-	}
-	region, err := cmd.Flags().GetString("region")
-	if err != nil {
-		return err
-	}
-	number, err := cmd.Flags().GetInt("number")
-	if err != nil {
-		return err
-	}
-	logging, err := cmd.Flags().GetBool("logging")
-	if err != nil {
-		return err
-	}
+	s.DisableLogger()
 
 	config := kinesis.ConsumerConfig{
 		Group:  "tail",
@@ -78,66 +71,77 @@ func Run(cmd *cobra.Command, args []string) error {
 		},
 	}
 
-	log := kinesis.DumbLogger
-	if logging {
-		log = Log
+	var skiReshardingOrderOption = dumbConsumerOption
+	if skiReshardingOrder {
+		skiReshardingOrderOption = kinesis.SkipReshardingOrder
 	}
 
 	checkpoint := memory.NewCheckpoint()
-	consumer, err := kinesis.NewConsumer(config, handler(number), checkpoint,
-		kinesis.WithCheckpointStrategy(kinesis.AfterRecord),
+	consumer, err := kinesis.NewConsumer(config, handler(), checkpoint,
+		kinesis.WithCheckpointStrategy(kinesis.AfterRecordBatch),
 		kinesis.SinceLatest(),
-		kinesis.WithLogger(log),
+		skiReshardingOrderOption(),
 	)
 	if err != nil {
 		return err
 	}
 
-	errChan := make(chan error, 1)
-	go func() {
-		if err := consumer.Start(); err != nil {
-			errChan <- err
-		}
-	}()
-
-	select {
-	case <-termChan:
-		if err := consumer.Stop(); err != nil {
-			return err
-		}
-	case <-errChan:
-		return err
+	if logging {
+		consumer.SetLogger(Log)
+		s.SetLogger(Log)
 	}
+
+	s.AddRunner("kinesis-tail", consumer.Run)
+
+	s.Start()
 
 	return nil
 }
 
 // Log logs kinesis consumer.
-func Log(level string, msg string, data map[string]interface{}) {
+func Log(level string, data map[string]interface{}, format string, args ...interface{}) {
 	switch level {
 	case kinesis.Debug:
-		log.WithData(data).Debug(msg)
+		log.WithData(data).Debugf(format, args...)
 	case kinesis.Info:
-		log.WithData(data).Info(msg)
+		log.WithData(data).Infof(format, args...)
 	case kinesis.Error:
-		log.WithData(data).Error(msg)
+		log.WithData(data).Errorf(format, args...)
 	}
 }
 
-func handler(number int) kinesis.MessageHandler {
+func handler() kinesis.MessageHandler {
+	var f = bufio.NewWriter(os.Stdout)
+
 	return func(message kinesis.Message) error {
 		if number != 0 && atomic.LoadInt32(&iteration) >= int32(number) {
-			select {
-			case termChan <- os.Interrupt:
-				return nil
-			default:
-				return nil
+			s.Shutdown()
+
+			return nil
+		}
+
+		msg := message.Data
+		if gzipDecode {
+			reader, err := gzip.NewReader(bytes.NewBuffer(message.Data))
+			if err != nil {
+				return errors.Wrap(err, "failed to decode message")
+			}
+
+			msg, err = ioutil.ReadAll(reader)
+			if err != nil {
+				return errors.Wrap(err, "failed to read decoded message")
 			}
 		}
 
-		fmt.Println(string(message.Data))
+		f.WriteString(string(msg) + "\n")
+		f.Flush()
+
 		atomic.AddInt32(&iteration, 1)
 
 		return nil
 	}
+}
+
+func dumbConsumerOption() kinesis.ConsumerOption {
+	return func(c *kinesis.ConsumerOptions) {}
 }

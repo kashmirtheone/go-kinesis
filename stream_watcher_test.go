@@ -1,6 +1,7 @@
 package kinesis
 
 import (
+	"context"
 	"testing"
 
 	"gitlab.com/marcoxavier/go-kinesis/mocks"
@@ -17,21 +18,21 @@ func TestStreamWatcher_CheckStream_Failing(t *testing.T) {
 	RegisterTestingT(t)
 
 	// Assign
+	ctx := context.TODO()
 	kinesisAPI := &mocks.KinesisAPI{}
 	watcher := streamWatcher{
 		client: kinesisAPI,
 		stream: "some_stream",
-		logger: DumbLogger,
 	}
 	describe := &kinesis.DescribeStreamInput{
 		Limit:      aws.Int64(1),
 		StreamName: aws.String(watcher.stream),
 	}
 
-	kinesisAPI.On("DescribeStream", describe).Return(nil, errors.New("something failed"))
+	kinesisAPI.On("DescribeStreamWithContext", ctx, describe).Return(nil, errors.New("something failed"))
 
 	// Act
-	err := watcher.checkStream()
+	err := watcher.checkStream(ctx)
 
 	// Assert
 	Expect(err).ToNot(HaveOccurred())
@@ -41,6 +42,7 @@ func TestStreamWatcher_CheckStream_NothingToDo(t *testing.T) {
 	RegisterTestingT(t)
 
 	// Assign
+	ctx := context.TODO()
 	kinesisAPI := &mocks.KinesisAPI{}
 	deleted := false
 	deletingCallback := func() {
@@ -49,7 +51,6 @@ func TestStreamWatcher_CheckStream_NothingToDo(t *testing.T) {
 	watcher := streamWatcher{
 		client:           kinesisAPI,
 		stream:           "some_stream",
-		logger:           DumbLogger,
 		deletingCallback: deletingCallback,
 	}
 	describe := &kinesis.DescribeStreamInput{
@@ -60,10 +61,10 @@ func TestStreamWatcher_CheckStream_NothingToDo(t *testing.T) {
 		StreamDescription: &kinesis.StreamDescription{StreamStatus: aws.String("some_status")},
 	}
 
-	kinesisAPI.On("DescribeStream", describe).Return(response, nil)
+	kinesisAPI.On("DescribeStreamWithContext", ctx, describe).Return(response, nil)
 
 	// Act
-	err := watcher.checkStream()
+	err := watcher.checkStream(ctx)
 
 	// Assert
 	Expect(err).ToNot(HaveOccurred())
@@ -74,6 +75,7 @@ func TestStreamWatcher_CheckStream_DeletingStream(t *testing.T) {
 	RegisterTestingT(t)
 
 	// Assign
+	ctx := context.TODO()
 	kinesisAPI := &mocks.KinesisAPI{}
 	deleted := false
 	deletingCallback := func() {
@@ -82,7 +84,6 @@ func TestStreamWatcher_CheckStream_DeletingStream(t *testing.T) {
 	watcher := streamWatcher{
 		client:           kinesisAPI,
 		stream:           "some_stream",
-		logger:           DumbLogger,
 		deletingCallback: deletingCallback,
 	}
 	describe := &kinesis.DescribeStreamInput{
@@ -93,10 +94,10 @@ func TestStreamWatcher_CheckStream_DeletingStream(t *testing.T) {
 		StreamDescription: &kinesis.StreamDescription{StreamStatus: aws.String(kinesis.StreamStatusDeleting)},
 	}
 
-	kinesisAPI.On("DescribeStream", describe).Return(response, nil)
+	kinesisAPI.On("DescribeStreamWithContext", ctx, describe).Return(response, nil)
 
 	// Act
-	err := watcher.checkStream()
+	err := watcher.checkStream(ctx)
 
 	// Assert
 	Expect(err).ToNot(HaveOccurred())
