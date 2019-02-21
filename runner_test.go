@@ -217,6 +217,49 @@ func TestRunner_Process_FailsHandleRecord(t *testing.T) {
 	Expect(kinesisAPI.AssertExpectations(t)).To(BeTrue(), "Should try to get records")
 }
 
+func TestRunner_Process_PanicsHandleRecord(t *testing.T) {
+	RegisterTestingT(t)
+
+	// Assign
+	ctx := context.TODO()
+	checkpoint := &mocks.Checkpoint{}
+	kinesisAPI := &mocks.KinesisAPI{}
+	r := runner{
+		client:             kinesisAPI,
+		checkpoint:         checkpoint,
+		checkpointStrategy: AfterRecordBatch,
+		stream:             "some_stream",
+		group:              "some_group",
+		tick:               time.Hour,
+		handler: func(Message) error {
+			panic("something failed")
+		},
+	}
+	getShardIteratorInput := &kinesis.GetShardIteratorInput{
+		ShardId:                aws.String(r.shardID),
+		StreamName:             aws.String(r.stream),
+		ShardIteratorType:      aws.String(kinesis.ShardIteratorTypeAfterSequenceNumber),
+		StartingSequenceNumber: aws.String("some_sequence_number"),
+	}
+	getShardIteratorOutput := &kinesis.GetShardIteratorOutput{ShardIterator: aws.String("some_shard_iterator")}
+	getRecordsInput := &kinesis.GetRecordsInput{
+		ShardIterator: getShardIteratorOutput.ShardIterator,
+	}
+	record := &kinesis.Record{PartitionKey: aws.String("some_partition"), Data: []byte("some_data"), SequenceNumber: aws.String("some_sequence_number2")}
+	getRecordsOutput := &kinesis.GetRecordsOutput{NextShardIterator: aws.String("some_shard_iterator"), Records: []*kinesis.Record{record}}
+	checkpoint.On("Get", r.checkpointIdentifier()).Return("some_sequence_number", nil)
+	kinesisAPI.On("GetShardIteratorWithContext", ctx, getShardIteratorInput).Return(getShardIteratorOutput, nil)
+	kinesisAPI.On("GetRecordsWithContext", ctx, getRecordsInput).Return(getRecordsOutput, nil)
+	checkpoint.On("Set", r.checkpointIdentifier(), "some_sequence_number").Return(errors.New("something failed"))
+
+	// Act
+	err := r.process(ctx)
+
+	// Assert
+	Expect(err).ToNot(HaveOccurred())
+	Expect(kinesisAPI.AssertExpectations(t)).To(BeTrue(), "Should try to get records")
+}
+
 func TestRunner_Process_HandlesWithSuccess(t *testing.T) {
 	RegisterTestingT(t)
 

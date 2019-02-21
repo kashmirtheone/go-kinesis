@@ -165,7 +165,13 @@ func (r *runner) process(ctx context.Context) error {
 	}
 }
 
-func (r *runner) processRecord(record *kinesis.Record) error {
+func (r *runner) processRecord(record *kinesis.Record) (err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			err = errors.Wrap(fmt.Errorf("%s", p), "runner terminated due a panic")
+		}
+	}()
+
 	message := Message{Partition: *record.PartitionKey, Data: record.Data}
 
 	if err := r.handler(message); err != nil {
