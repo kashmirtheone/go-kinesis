@@ -3,8 +3,9 @@ package kinesis
 import (
 	"context"
 	"testing"
+	"time"
 
-	"gitlab.com/marcoxavier/go-kinesis/mocks"
+	"github.com/stretchr/testify/mock"
 
 	"github.com/pkg/errors"
 
@@ -19,10 +20,12 @@ func TestStreamWatcher_CheckStream_Failing(t *testing.T) {
 
 	// Assign
 	ctx := context.TODO()
-	kinesisAPI := &mocks.KinesisAPI{}
+	kinesisAPI := &KinesisAPI{}
 	watcher := streamWatcher{
-		client: kinesisAPI,
-		stream: "some_stream",
+		client:      kinesisAPI,
+		stream:      "some_stream",
+		logger:      &dumbLogger{},
+		eventLogger: &dumbEventLogger{},
 	}
 	describe := &kinesis.DescribeStreamInput{
 		Limit:      aws.Int64(1),
@@ -35,7 +38,7 @@ func TestStreamWatcher_CheckStream_Failing(t *testing.T) {
 	err := watcher.checkStream(ctx)
 
 	// Assert
-	Expect(err).ToNot(HaveOccurred())
+	Expect(err).To(HaveOccurred())
 }
 
 func TestStreamWatcher_CheckStream_NothingToDo(t *testing.T) {
@@ -43,7 +46,7 @@ func TestStreamWatcher_CheckStream_NothingToDo(t *testing.T) {
 
 	// Assign
 	ctx := context.TODO()
-	kinesisAPI := &mocks.KinesisAPI{}
+	kinesisAPI := &KinesisAPI{}
 	deleted := false
 	deletingCallback := func() {
 		deleted = true
@@ -52,6 +55,8 @@ func TestStreamWatcher_CheckStream_NothingToDo(t *testing.T) {
 		client:           kinesisAPI,
 		stream:           "some_stream",
 		deletingCallback: deletingCallback,
+		logger:           &dumbLogger{},
+		eventLogger:      &dumbEventLogger{},
 	}
 	describe := &kinesis.DescribeStreamInput{
 		Limit:      aws.Int64(1),
@@ -76,15 +81,16 @@ func TestStreamWatcher_CheckStream_DeletingStream(t *testing.T) {
 
 	// Assign
 	ctx := context.TODO()
-	kinesisAPI := &mocks.KinesisAPI{}
+	kinesisAPI := &KinesisAPI{}
 	deleted := false
 	deletingCallback := func() {
 		deleted = true
 	}
 	watcher := streamWatcher{
-		client:           kinesisAPI,
-		stream:           "some_stream",
-		deletingCallback: deletingCallback,
+		client:      kinesisAPI,
+		stream:      "some_stream",
+		logger:      &dumbLogger{},
+		eventLogger: &dumbEventLogger{},
 	}
 	describe := &kinesis.DescribeStreamInput{
 		Limit:      aws.Int64(1),
@@ -97,9 +103,45 @@ func TestStreamWatcher_CheckStream_DeletingStream(t *testing.T) {
 	kinesisAPI.On("DescribeStreamWithContext", ctx, describe).Return(response, nil)
 
 	// Act
+	watcher.SetDeletingCallback(deletingCallback)
 	err := watcher.checkStream(ctx)
 
 	// Assert
 	Expect(err).ToNot(HaveOccurred())
 	Expect(deleted).To(BeTrue())
+}
+
+func TestStreamWatcher_Run_ReturnsError(t *testing.T) {
+	RegisterTestingT(t)
+
+	// Assign
+	ctx := context.TODO()
+	kinesisAPI := &KinesisAPI{}
+	mockLogger := &MockLogger{}
+	watcher := streamWatcher{
+		client:      kinesisAPI,
+		stream:      "some_stream",
+		tick:        time.Nanosecond,
+		logger:      mockLogger,
+		eventLogger: &dumbEventLogger{},
+	}
+	describe := &kinesis.DescribeStreamInput{
+		Limit:      aws.Int64(1),
+		StreamName: aws.String(watcher.stream),
+	}
+	called := false
+	kinesisAPI.On("DescribeStreamWithContext", mock.Anything, describe).Return(nil, errors.New("something failed"))
+	mockLogger.On("Log", LevelError, mock.Anything, mock.Anything, mock.Anything).Run(func(_ mock.Arguments) {
+		called = true
+	})
+	mockLogger.On("Log", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return()
+
+	// Act
+	canceledTimeout, cancel := context.WithCancel(ctx)
+	cancel()
+	err := watcher.Run(canceledTimeout)
+
+	// Assert
+	Expect(err).ToNot(HaveOccurred())
+	Expect(called).To(BeTrue())
 }

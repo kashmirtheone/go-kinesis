@@ -3,17 +3,26 @@ package kinesis
 import (
 	"context"
 	"fmt"
-	"github.com/pkg/errors"
 	"time"
+
+	"github.com/pkg/errors"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/kinesis"
 	"github.com/aws/aws-sdk-go/service/kinesis/kinesisiface"
 )
 
+// Runner is a shard iterator.
+type Runner interface {
+	Start(ctx context.Context) error
+	Stop(ctx context.Context) error
+	ShardID() string
+	Closed() bool
+}
+
 // runnerFactory periodic checks shard status an notifies if is deleting.
 type runnerFactory struct {
-	runners             map[string]*runner
+	runners             map[string]Runner
 	handler             MessageHandler
 	checkpoint          Checkpoint
 	group               string
@@ -24,54 +33,62 @@ type runnerFactory struct {
 	checkpointStrategy  CheckpointStrategy
 	client              kinesisiface.KinesisAPI
 	skipReshardingOrder bool
+	logger              Logger
+	eventLogger         EventLogger
 }
 
 func (f *runnerFactory) checkShards(ctx context.Context) error {
+	start := time.Now()
+	f.eventLogger.LogEvent(EventLog{Event: ShardManagerTriggered, Elapse: time.Now().Sub(start)})
+
 	input := &kinesis.ListShardsInput{
 		StreamName: aws.String(f.stream),
 	}
 
-	log(Debug, nil, "fetching shards")
+	f.logger.Log(LevelDebug, nil, "fetching shards")
 	result, err := f.client.ListShardsWithContext(ctx, input)
 	if err != nil {
-		log(Error, loggerData{"cause": fmt.Sprintf("%v", err)}, "failed to fetch shards")
+		f.logger.Log(LevelError, loggerData{"cause": fmt.Sprintf("%v", err)}, "failed to fetch shards")
 		return nil
 	}
 
 	for _, shard := range result.Shards {
-		if _, exists := f.runners[*shard.ShardId]; exists {
+		if _, exists := f.runners[aws.StringValue(shard.ShardId)]; exists {
 			continue
 		}
 
-		if !f.skipReshardingOrder && !f.eligibleToStart(shard) {
-			log(
-				Debug,
-				loggerData{"shard_id": *shard.ShardId, "parent_shard_id": *shard.ParentShardId, "adjacent_shard_id": *shard.AdjacentParentShardId},
+		if !f.shouldStart(shard) {
+			f.logger.Log(
+				LevelDebug,
+				loggerData{"shard_id": aws.StringValue(shard.ShardId), "parent_shard_id": aws.StringValue(shard.ParentShardId), "adjacent_shard_id": aws.StringValue(shard.AdjacentParentShardId)},
 				"runner not eligible to start, waiting for parent runners to close",
 			)
 			continue
 		}
 
-		log(Debug, loggerData{"shard_id": *shard.ShardId}, "creating new runner")
+		f.logger.Log(LevelDebug, loggerData{"shard_id": aws.StringValue(shard.ShardId)}, "creating new runner")
 		r := &runner{
 			client:             f.client,
 			handler:            f.handler,
-			shardID:            *shard.ShardId,
+			shardID:            aws.StringValue(shard.ShardId),
 			group:              f.group,
 			stream:             f.stream,
 			checkpoint:         f.checkpoint,
 			checkpointStrategy: f.checkpointStrategy,
 			tick:               f.runnerTick,
 			iteratorType:       f.runnerIteratorType,
+			logger:             f.logger,
+			eventLogger:        f.eventLogger,
+			stopped:            make(chan struct{}),
 		}
 
-		f.runners[*shard.ShardId] = r
+		f.runners[aws.StringValue(shard.ShardId)] = r
 
 		go func() {
 			// TODO proper handler this error
-			log(Info, loggerData{"shard_id": r.shardID}, "starting runner")
+			f.logger.Log(LevelInfo, loggerData{"shard_id": r.ShardID()}, "starting runner")
 			if err := r.Start(ctx); err != nil {
-				log(Error, loggerData{"shard_id": r.shardID}, "failed start runner")
+				f.logger.Log(LevelError, loggerData{"shard_id": r.ShardID()}, "failed start runner")
 			}
 		}()
 	}
@@ -79,22 +96,37 @@ func (f *runnerFactory) checkShards(ctx context.Context) error {
 	return nil
 }
 
-func (f *runnerFactory) eligibleToStart(shard *kinesis.Shard) bool {
-	if shard.ParentShardId != nil {
-		parentRunner, exists := f.runners[*shard.ParentShardId]
-		if exists && !parentRunner.Closed() {
-			return false
-		}
+func (f *runnerFactory) shouldStart(shard *kinesis.Shard) bool {
+	if f.skipReshardingOrder {
+		return true
 	}
 
-	if shard.AdjacentParentShardId != nil {
-		parentRunner, exists := f.runners[*shard.AdjacentParentShardId]
-		if exists && !parentRunner.Closed() {
-			return false
-		}
+	parentRunner, exists := f.runners[aws.StringValue(shard.ParentShardId)]
+	if exists && !parentRunner.Closed() {
+		return false
+	}
+
+	adjacentRunner, exists := f.runners[aws.StringValue(shard.AdjacentParentShardId)]
+	if exists && !adjacentRunner.Closed() {
+		return false
 	}
 
 	return true
+}
+
+func (f *runnerFactory) stopRunners() error {
+	ctx := context.Background()
+
+	for i := range f.runners {
+		r := f.runners[i]
+
+		f.logger.Log(LevelInfo, loggerData{"shard_id": r.ShardID()}, "stopping runner")
+		if err := r.Stop(ctx); err != nil {
+			f.logger.Log(LevelError, loggerData{"shard_id": r.ShardID(), "cause": fmt.Sprintf("%v", err)}, "failed to stop runner")
+		}
+	}
+
+	return nil
 }
 
 // Run runs runner factory.
@@ -109,7 +141,7 @@ func (f *runnerFactory) Run(ctx context.Context) error {
 
 		select {
 		case <-ctx.Done():
-			return nil
+			return f.stopRunners()
 		case <-ticker.C:
 			continue
 		}

@@ -31,9 +31,13 @@ type runner struct {
 	checkpointStrategy CheckpointStrategy
 	iteratorType       string
 	shutdown           context.CancelFunc
+	logger             Logger
+	eventLogger        EventLogger
 	closed             bool
+	stopped            chan struct{}
 }
 
+// Start starts runner.
 func (r *runner) Start(ctx context.Context) error {
 	mCtx, cancel := context.WithCancel(ctx)
 	r.shutdown = cancel
@@ -48,6 +52,7 @@ func (r *runner) Start(ctx context.Context) error {
 
 		select {
 		case <-mCtx.Done():
+			close(r.stopped)
 			return nil
 		case <-ticker.C:
 			continue
@@ -55,9 +60,21 @@ func (r *runner) Start(ctx context.Context) error {
 	}
 }
 
-func (r *runner) Stop() error {
+// Stop stops runner.
+func (r *runner) Stop(ctx context.Context) error {
 	r.shutdown()
-	return nil
+
+	select {
+	case <-r.stopped:
+		return nil
+	case <-ctx.Done():
+		return fmt.Errorf("runner exit without ended stopping")
+	}
+}
+
+// ShardID returns its shard id.
+func (r *runner) ShardID() string {
+	return r.shardID
 }
 
 // Closed return if runner's shard is closed.
@@ -66,17 +83,18 @@ func (r *runner) Closed() bool {
 }
 
 func (r *runner) process(ctx context.Context) error {
-	log(Debug, nil, "getting last checkpoint")
+
+	r.logger.Log(LevelDebug, nil, "getting last checkpoint")
 	lastSequence, err := r.checkpoint.Get(r.checkpointIdentifier())
 	if err != nil {
-		log(Error, nil, "failed getting sequence number", loggerData{"cause": fmt.Sprintf("%v", err)})
+		r.logger.Log(LevelError, nil, "failed getting sequence number", loggerData{"cause": fmt.Sprintf("%v", err)})
 		return nil
 	}
 
-	log(Debug, nil, "getting shard iterator")
+	r.logger.Log(LevelDebug, nil, "getting shard iterator")
 	shardIterator, err := r.getShardIterator(ctx, lastSequence)
 	if err != nil {
-		log(Error, loggerData{"cause": fmt.Sprintf("%v", err)}, "error getting shard iterator")
+		r.logger.Log(LevelError, loggerData{"cause": fmt.Sprintf("%v", err)}, "error getting shard iterator")
 		return nil
 	}
 
@@ -86,25 +104,27 @@ func (r *runner) process(ctx context.Context) error {
 	defer ticker.Stop() // nolint
 
 	for {
-		log(Debug, nil, "getting records")
+		start := time.Now()
+
+		r.logger.Log(LevelDebug, nil, "getting records")
 		resp, err := r.client.GetRecordsWithContext(ctx, &kinesis.GetRecordsInput{
 			ShardIterator: shardIterator,
 		})
 		if err != nil {
 			aerr, ok := err.(awserr.Error)
 			if ok && aerr.Code() == kinesis.ErrCodeProvisionedThroughputExceededException {
-				log(Info, nil, "the request rate for the stream is too high or the requested Data is too large for the available throughput, waiting...")
+				r.logger.Log(LevelInfo, nil, "the request rate for the stream is too high or the requested Data is too large for the available throughput, waiting...")
 
 				return nil
 			}
 
-			log(Error, loggerData{"cause": fmt.Sprintf("%v", err)}, "error getting records")
+			r.logger.Log(LevelError, loggerData{"cause": fmt.Sprintf("%v", err)}, "error getting records")
 
 			return nil
 		}
 
 		if resp.NextShardIterator == nil {
-			log(Info, nil, "shard is closed, stopping runner")
+			r.logger.Log(LevelInfo, nil, "shard is closed, stopping runner")
 			r.closed = true
 			r.shutdown()
 
@@ -112,32 +132,32 @@ func (r *runner) process(ctx context.Context) error {
 		}
 
 		if len(resp.Records) <= 0 {
-			log(Debug, nil, "there is no records to process, jumping to next iteration")
+			r.logger.Log(LevelDebug, nil, "there is no records to process, jumping to next iteration")
 			shardIterator = resp.NextShardIterator
 
 			goto next
 		}
 
-		log(Debug, nil, "processing records")
+		r.logger.Log(LevelDebug, nil, "processing records")
 		for _, record := range resp.Records {
-			if err := r.processRecord(record); err != nil {
+			if err := r.processRecord(ctx, record); err != nil {
 				resp.NextShardIterator, err = r.getShardIterator(ctx, lastSequence)
 				if err != nil {
-					log(Error, loggerData{"cause": fmt.Sprintf("%v", err)}, "error getting shard iterator")
+					r.logger.Log(LevelError, loggerData{"cause": fmt.Sprintf("%v", err)}, "error getting shard iterator")
 					return nil
 				}
 
-				log(Error, loggerData{"cause": fmt.Sprintf("%v", err)}, "error handling message")
+				r.logger.Log(LevelError, loggerData{"cause": fmt.Sprintf("%v", err)}, "error handling message")
 
 				break
 			}
 
-			lastSequence = *record.SequenceNumber
+			lastSequence = aws.StringValue(record.SequenceNumber)
 
 			if r.checkpointStrategy == AfterRecord {
-				log(Debug, nil, "setting checkpoint")
+				r.logger.Log(LevelDebug, nil, "setting checkpoint")
 				if err := r.checkpoint.Set(r.checkpointIdentifier(), lastSequence); err != nil {
-					log(Error, loggerData{"cause": fmt.Sprintf("%v", err)}, "error setting sequence number")
+					r.logger.Log(LevelError, loggerData{"cause": fmt.Sprintf("%v", err)}, "error setting sequence number")
 
 					return nil
 				}
@@ -146,35 +166,43 @@ func (r *runner) process(ctx context.Context) error {
 
 		if r.checkpointStrategy == AfterRecordBatch {
 			if err := r.checkpoint.Set(r.checkpointIdentifier(), lastSequence); err != nil {
-				log(Error, loggerData{"cause": fmt.Sprintf("%v", err)}, "error setting sequence number")
+				r.logger.Log(LevelError, loggerData{"cause": fmt.Sprintf("%v", err)}, "error setting sequence number")
 
 				return nil
 			}
 		}
 
 		shardIterator = resp.NextShardIterator
-		log(Debug, nil, "records processed")
+		r.logger.Log(LevelDebug, nil, "records processed")
 
 	next:
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
+			r.eventLogger.LogEvent(EventLog{Event: ShardIteratorTriggered, Elapse: time.Now().Sub(start)})
 			continue
 		}
 	}
 }
 
-func (r *runner) processRecord(record *kinesis.Record) (err error) {
+func (r *runner) processRecord(ctx context.Context, record *kinesis.Record) (err error) {
+	start := time.Now()
 	defer func() {
 		if p := recover(); p != nil {
 			err = errors.Wrap(fmt.Errorf("%s", p), "runner terminated due a panic")
 		}
+
+		if err != nil {
+			r.eventLogger.LogEvent(EventLog{Event: RecordProcessedFail, Elapse: time.Now().Sub(start)})
+		} else {
+			r.eventLogger.LogEvent(EventLog{Event: RecordProcessedSuccess, Elapse: time.Now().Sub(start)})
+		}
 	}()
 
-	message := Message{Partition: *record.PartitionKey, Data: record.Data}
+	message := Message{Partition: aws.StringValue(record.PartitionKey), Data: record.Data}
 
-	if err := r.handler(message); err != nil {
+	if err := r.handler(ctx, message); err != nil {
 		return errors.Wrap(err, "error handling message")
 	}
 

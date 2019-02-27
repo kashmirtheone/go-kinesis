@@ -7,8 +7,8 @@ import (
 )
 
 const (
-	defaultStreamCheckTick   = time.Minute
-	defaultRunnerFactoryTick = time.Second * 30
+	defaultStreamCheckTick   = time.Second * 30
+	defaultRunnerFactoryTick = time.Second * 10
 	defaultRunnerTick        = time.Second * 5
 )
 

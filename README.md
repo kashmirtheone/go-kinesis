@@ -9,14 +9,17 @@ This library is wrapper around the Kinesis API to consume and produce records, s
 * Iterator Strategy (SinceOldest and SinceLatest);
 * Checkpoint Strategy (Saving each record or each batch);
 * Handles stream deleting;
-* Handles resharding in a pragmatic way;
+* Handles stream resharding, optionally you can set if you want to keep shard ordering or not;
 * Handles throttling.
 * Customizable timeouts/ticks;
 * Override AWS Configuration;
 * Some Checkpoint implementations out of the box;
 * Logging;
+* Event Logger
+* Metrics
 * Fully tested;
 * Being used in production environment.
+* Etc...
 
 
 ## Installation
@@ -38,7 +41,7 @@ dep ensure --add gitlab.com/marcoxavier/go-kinesis
 All you need is to pass a consumer configuration, inject the checkpoint implementation and send you message handler.
 
 ```go
-handler := func handler(message kinesis.Message) error {
+handler := func handler(_ context.Context, message kinesis.Message) error {
 	fmt.Println(string(message.Data))
 	return nil
 }
@@ -51,7 +54,7 @@ config := kinesis.ConsumerConfig{
 checkpoint := memory.NewCheckpoint()
 consumer, err := kinesis.NewConsumer(config, handler, checkpoint)
 if err != nil {
-return errors.Wrap(err, "failed to create kinesis consumer")
+	return errors.Wrap(err, "failed to create kinesis consumer")
 }
 
 if err := consumer.Start(); err != nil {
@@ -84,7 +87,7 @@ if err := producer.Publish(message); err != nil {
 }
 ```
 
-> __Warning__: It's not recoment to publish in batch, some records can fail to be published.
+> __Warning__: It's not recommended to publish in batch, some records can fail to be published.
 > At the moment it's not being handler correctly.
 
 ### Tools
@@ -93,14 +96,41 @@ __Tail__:  Consumes the specified stream and writes to stdout all records after 
 
 __Head__: Consumes the specified stream and writes to stdout all untrimmed records in the shard.
 
-In order to install `kinesis tools` you need some requirements:
-* go version 1.11
-
 Kinesis tool uses your specified AWS profile (read [THIS](https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-configure.html) for more information)
 
 For more information, nothing better than using the help parameter.
 ```bash
-kinesis --help
+me@ubuntu:~$ kinesis --help
+Usage:
+  kinesis [command]
+
+Available Commands:
+  head        The head utility displays the contents of kinesis stream to the standard output, starting in the oldest record.
+  help        Help about any command
+  tail        The tail utility displays the contents of kinesis stream to the standard output, starting in the latest record.
+
+Flags:
+  -h, --help   help for kinesis
+
+Use "kinesis [command] --help" for more information about a command.
+```
+
+```bash
+me@ubuntu:~$ kinesis tail --help
+The tail utility displays the contents of kinesis stream to the standard output, starting in the latest record.
+
+Usage:
+  kinesis tail [flags]
+
+Flags:
+  -e, --endpoint string         kinesis endpoint
+      --gzip                    enables gzip decoder
+  -h, --help                    help for tail
+      --logging                 enables logging, mute by default
+  -n, --number int              number of messages to show
+  -r, --region string           aws region, by default it will use AWS_REGION from aws config
+      --skip-resharding-order   if enabled, consumer will skip ordering when resharding
+  -s, --stream string           stream name
 ```
 
 Example
@@ -115,5 +145,5 @@ me@ubuntu:~$ kinesis head -s some_stream -n 20
 
 - [x] Split or merge runners while resharding
 - [x] Decouple logger
-- [ ] Add metrics
+- [x] Add metrics
 - [ ] Handle correctly while publishing a batch

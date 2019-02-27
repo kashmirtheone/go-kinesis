@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 
@@ -14,27 +15,36 @@ import (
 
 var log = logger.Spawn(logger.WithTags("kinesis-consumer"))
 
-func handler(message kinesis.Message) error {
+func handler(_ context.Context, message kinesis.Message) error {
 	fmt.Printf("partition: %s, data: %s\n", message.Partition, string(message.Data))
-
 	return nil
 }
 
+// Logger ...
+type Logger struct {
+}
+
 // Log logs kinesis consumer.
-func Log(level string, data map[string]interface{}, format string, args ...interface{}) {
+func (l *Logger) Log(level string, data map[string]interface{}, format string, args ...interface{}) {
 	switch level {
-	case kinesis.Debug:
+	case kinesis.LevelDebug:
 		log.WithData(data).Debugf(format, args...)
-	case kinesis.Info:
+	case kinesis.LevelInfo:
 		log.WithData(data).Infof(format, args...)
-	case kinesis.Error:
+	case kinesis.LevelError:
 		log.WithData(data).Errorf(format, args...)
 	}
 }
 
+// LogEvent logs events kinesis consumer.
+func (l *Logger) LogEvent(event kinesis.EventLog) {
+	log.WithData(logger.KV{"event": event.Event, "elapse": fmt.Sprintf("%v", event.Elapse)}).Debugf("event logger triggered")
+}
+
 func main() {
+	log := &Logger{}
 	s := supervisor.NewSupervisor()
-	s.SetLogger(Log)
+	s.SetLogger(log.Log)
 
 	config := kinesis.ConsumerConfig{
 		Group:  "test-consumer",
@@ -47,12 +57,13 @@ func main() {
 
 	checkpoint := memory.NewCheckpoint()
 	consumer, err := kinesis.NewConsumer(config, handler, checkpoint,
-		kinesis.WithCheckpointStrategy(kinesis.AfterRecord),
+		kinesis.WithCheckpointStrategy(kinesis.AfterRecordBatch),
 	)
 	if err != nil {
 		panic(err)
 	}
-	consumer.SetLogger(Log)
+	consumer.SetLogger(log)
+	consumer.SetEventLogger(log)
 
 	s.AddRunner("kinesis-consumer", consumer.Run)
 

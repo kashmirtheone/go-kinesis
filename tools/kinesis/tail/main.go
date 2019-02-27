@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"io/ioutil"
 	"os"
 	"sync/atomic"
@@ -87,8 +88,9 @@ func Run(cmd *cobra.Command, args []string) error {
 	}
 
 	if logging {
-		consumer.SetLogger(Log)
-		s.SetLogger(Log)
+		l := &Logger{}
+		consumer.SetLogger(l)
+		s.SetLogger(l.Log)
 	}
 
 	s.AddRunner("kinesis-tail", consumer.Run)
@@ -98,14 +100,18 @@ func Run(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// Logger holds logger
+type Logger struct {
+}
+
 // Log logs kinesis consumer.
-func Log(level string, data map[string]interface{}, format string, args ...interface{}) {
+func (l *Logger) Log(level string, data map[string]interface{}, format string, args ...interface{}) {
 	switch level {
-	case kinesis.Debug:
+	case kinesis.LevelDebug:
 		log.WithData(data).Debugf(format, args...)
-	case kinesis.Info:
+	case kinesis.LevelInfo:
 		log.WithData(data).Infof(format, args...)
-	case kinesis.Error:
+	case kinesis.LevelError:
 		log.WithData(data).Errorf(format, args...)
 	}
 }
@@ -113,7 +119,7 @@ func Log(level string, data map[string]interface{}, format string, args ...inter
 func handler() kinesis.MessageHandler {
 	var f = bufio.NewWriter(os.Stdout)
 
-	return func(message kinesis.Message) error {
+	return func(_ context.Context, message kinesis.Message) error {
 		if number != 0 && atomic.LoadInt32(&iteration) >= int32(number) {
 			s.Shutdown()
 

@@ -17,8 +17,19 @@ const (
 	AfterRecordBatch
 )
 
+// StreamChecker checks stream state and handles it.
+type StreamChecker interface {
+	Run(ctx context.Context) error
+	SetDeletingCallback(cb func())
+}
+
+// RunnerFactory handler stream sharding.
+type RunnerFactory interface {
+	Run(ctx context.Context) error
+}
+
 // MessageHandler is the message handler.
-type MessageHandler func(Message) error
+type MessageHandler func(ctx context.Context, msg Message) error
 
 // CheckpointStrategy checkpoint behaviour.
 type CheckpointStrategy = int
@@ -35,8 +46,11 @@ type Consumer struct {
 	group         string
 	stream        string
 	handler       MessageHandler
-	streamWatcher *streamWatcher
-	runnerFactory *runnerFactory
+	streamWatcher StreamChecker
+	runnerFactory RunnerFactory
+	logger        Logger
+	eventLogger   EventLogger
+	stats         ConsumerStats
 }
 
 // NewConsumer creates a new kinesis consumer
@@ -55,8 +69,11 @@ func NewConsumer(config ConsumerConfig, handler MessageHandler, checkpoint Check
 			checkpointStrategy: AfterRecordBatch,
 			iteratorType:       kinesis.ShardIteratorTypeTrimHorizon,
 		},
-		stream: config.Stream,
-		group:  config.Group,
+		stream:      config.Stream,
+		group:       config.Group,
+		logger:      &dumbLogger{},
+		eventLogger: &dumbEventLogger{},
+		stats:       ConsumerStats{},
 	}
 
 	for _, opt := range opts {
@@ -73,13 +90,15 @@ func NewConsumer(config ConsumerConfig, handler MessageHandler, checkpoint Check
 	}
 
 	c.streamWatcher = &streamWatcher{
-		stream: config.Stream,
-		tick:   config.StreamCheckTick,
-		client: c.client,
+		stream:      config.Stream,
+		tick:        config.StreamCheckTick,
+		client:      c.client,
+		logger:      c,
+		eventLogger: c.eventLogger,
 	}
 
 	c.runnerFactory = &runnerFactory{
-		runners:             map[string]*runner{},
+		runners:             map[string]Runner{},
 		client:              c.client,
 		group:               config.Group,
 		stream:              config.Stream,
@@ -90,22 +109,47 @@ func NewConsumer(config ConsumerConfig, handler MessageHandler, checkpoint Check
 		checkpointStrategy:  c.checkpointStrategy,
 		runnerIteratorType:  c.iteratorType,
 		skipReshardingOrder: c.skipReshardingOrder,
+		logger:              c,
+		eventLogger:         c,
 	}
 
 	return c, nil
 }
 
+// Stats returns consumer stats.
+func (c *Consumer) Stats() ConsumerStats {
+	return c.stats
+}
+
+// Log main logger.
+func (c *Consumer) Log(level string, data map[string]interface{}, format string, args ...interface{}) {
+	c.logger.Log(level, data, format, args...)
+}
+
+// LogEvent main log event.
+func (c *Consumer) LogEvent(event EventLog) {
+	c.eventLogger.LogEvent(event)
+	c.stats.statsHandler(event)
+}
+
 // SetLogger allows you to set the logger.
 func (c *Consumer) SetLogger(logger Logger) {
 	if logger != nil {
-		log = logger
+		c.logger = logger
+	}
+}
+
+// SetEventLogger allows you to set the event logger.
+func (c *Consumer) SetEventLogger(eventLogger EventLogger) {
+	if eventLogger != nil {
+		c.eventLogger = eventLogger
 	}
 }
 
 // Run runs the consumer.
 func (c *Consumer) Run(ctx context.Context) error {
 	inCtx, cancel := context.WithCancel(ctx)
-	c.streamWatcher.deletingCallback = cancel
+	c.streamWatcher.SetDeletingCallback(cancel)
 
 	errChan := make(chan error, 2)
 	wg := sync.WaitGroup{}
@@ -114,7 +158,7 @@ func (c *Consumer) Run(ctx context.Context) error {
 
 	go func() {
 		defer wg.Done()
-		log(Info, nil, "starting stream watcher")
+		c.logger.Log(LevelInfo, nil, "starting stream watcher")
 		if err := c.streamWatcher.Run(inCtx); err != nil {
 			errChan <- err
 		}
@@ -122,7 +166,7 @@ func (c *Consumer) Run(ctx context.Context) error {
 
 	go func() {
 		defer wg.Done()
-		log(Info, nil, "starting runner factory")
+		c.logger.Log(LevelInfo, nil, "starting runner factory")
 		if err := c.runnerFactory.Run(inCtx); err != nil {
 			errChan <- err
 		}

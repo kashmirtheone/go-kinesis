@@ -1,3 +1,5 @@
 vendor
-mocks
-.coverage.out
+mock_*.go
+KinesisAPI.go
+Error.go
+.coverage.out*

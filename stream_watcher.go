@@ -18,6 +18,8 @@ type streamWatcher struct {
 	tick             time.Duration
 	client           kinesisiface.KinesisAPI
 	deletingCallback func()
+	logger           Logger
+	eventLogger      EventLogger
 }
 
 // Run runs stream watcher.
@@ -27,7 +29,7 @@ func (s *streamWatcher) Run(ctx context.Context) error {
 
 	for {
 		if err := s.checkStream(ctx); err != nil {
-			return errors.Wrap(err, "failed to check stream")
+			s.logger.Log(LevelError, loggerData{"cause": fmt.Sprintf("%v", err)}, "failed to check stream status")
 		}
 
 		select {
@@ -39,23 +41,29 @@ func (s *streamWatcher) Run(ctx context.Context) error {
 	}
 }
 
+// SetDeletingCallback callback is called when stream is deleting.
+func (s *streamWatcher) SetDeletingCallback(cb func()) {
+	s.deletingCallback = cb
+}
+
 func (s *streamWatcher) checkStream(ctx context.Context) error {
-	log(Debug, nil, "checking stream status")
+	start := time.Now()
+	defer s.eventLogger.LogEvent(EventLog{Event: StreamCheckedTriggered, Elapse: time.Now().Sub(start)})
+
+	s.logger.Log(LevelDebug, nil, "checking stream status")
 	stream, err := s.client.DescribeStreamWithContext(ctx,
 		&kinesis.DescribeStreamInput{
 			Limit:      aws.Int64(1),
 			StreamName: aws.String(s.stream),
 		},
 	)
-
 	if err != nil {
-		log(Error, loggerData{"cause": fmt.Sprintf("%v", err)}, "failed to check stream status")
-		return nil
+		return errors.Wrap(err, "failed to describe stream")
 
 	}
 
-	if *stream.StreamDescription.StreamStatus == kinesis.StreamStatusDeleting {
-		log(Info, nil, "stream is deleting")
+	if aws.StringValue(stream.StreamDescription.StreamStatus) == kinesis.StreamStatusDeleting {
+		s.logger.Log(LevelInfo, nil, "stream is deleting")
 		s.deletingCallback()
 	}
 
