@@ -1,6 +1,9 @@
 # Kinesis Client
 
-[![pipeline status](https://gitlab.com/marcoxavier/go-kinesis/badges/master/pipeline.svg)](https://gitlab.com/marcoxavier/go-kinesis/commits/master) [![coverage report](https://gitlab.com/marcoxavier/go-kinesis/badges/master/coverage.svg)](https://gitlab.com/marcoxavier/go-kinesis/commits/master) [![Go Report Card](https://goreportcard.com/badge/gitlab.com/marcoxavier/go-kinesis)](https://goreportcard.com/report/gitlab.com/marcoxavier/go-kinesis) [![License MIT](https://img.shields.io/badge/License-MIT-brightgreen.svg)](https://img.shields.io/badge/License-MIT-brightgreen.svg)
+[![Build Status](https://travis-ci.com/kashmirtheone/go-kinesis.svg?branch=master)](https://travis-ci.com/kashmirtheone/go-kinesis)
+[![GoDoc](https://godoc.org/github.com/kashmirtheone/go-kinesis?status.svg)](https://godoc.org/github.com/kashmirtheone/go-kinesis)
+[![Go Report Card](https://goreportcard.com/badge/gitlab.com/marcoxavier/go-kinesis)](https://goreportcard.com/report/gitlab.com/marcoxavier/go-kinesis)
+[![License MIT](https://img.shields.io/badge/License-MIT-brightgreen.svg)](https://img.shields.io/badge/License-MIT-brightgreen.svg)
 
 This library is wrapper around the Kinesis API to consume and produce records, saving the last sequence into a checkpoint abstraction.
 
@@ -26,12 +29,12 @@ This library is wrapper around the Kinesis API to consume and produce records, s
 
 * go get
 ```bash
-go get -u gitlab.com/marcoxavier/go-kinesis
+go get -u github.com/kashmirtheone/go-kinesis
 ```
 
 * dep (github.com/golang/dep/cmd/dep)
 ```bash
-dep ensure --add gitlab.com/marcoxavier/go-kinesis
+dep ensure --add github.com/kashmirtheone/go-kinesis
 ```
 
 ## Usage
@@ -135,7 +138,7 @@ Flags:
 
 Example
 ```bash
-me@ubuntu:~$ go install gitlab.com/marcoxavier/go-kinesis/tools/kinesis
+me@ubuntu:~$ go install github.com/kashmirtheone/go-kinesis/tools/kinesis
 me@ubuntu:~$ export AWS_PROFILE=some_aws_profile_here
 me@ubuntu:~$ kinesis head -s some_stream -n 20
 ```

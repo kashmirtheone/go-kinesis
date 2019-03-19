@@ -5,8 +5,8 @@ import (
 
 	logger "gitlab.com/vredens/go-logger"
 
-	"gitlab.com/marcoxavier/go-kinesis/tools/kinesis/head"
-	"gitlab.com/marcoxavier/go-kinesis/tools/kinesis/tail"
+	"github.com/kashmirtheone/go-kinesis/tools/kinesis/head"
+	"github.com/kashmirtheone/go-kinesis/tools/kinesis/tail"
 
 	"github.com/spf13/cobra"
 )

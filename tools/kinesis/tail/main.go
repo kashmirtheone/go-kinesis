@@ -11,13 +11,13 @@ import (
 
 	"github.com/pkg/errors"
 
-	"gitlab.com/marcoxavier/supervisor"
+	"github.com/kashmirtheone/go-supervisor"
 
 	logger "gitlab.com/vredens/go-logger"
 
-	"gitlab.com/marcoxavier/go-kinesis/checkpoint/memory"
+	"github.com/kashmirtheone/go-kinesis/checkpoint/memory"
 
-	kinesis "gitlab.com/marcoxavier/go-kinesis"
+	kinesis "github.com/kashmirtheone/go-kinesis"
 
 	"github.com/spf13/cobra"
 )

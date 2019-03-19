@@ -8,6 +8,7 @@ import (
 // ConsumerOption is the abstract functional-parameter type used for worker configuration.
 type ConsumerOption func(*ConsumerOptions)
 
+// ConsumerOptions holds all consumer options.
 type ConsumerOptions struct {
 	client              kinesisiface.KinesisAPI
 	iteratorType        string

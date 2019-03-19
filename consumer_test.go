@@ -157,7 +157,7 @@ func TestConsumer_Run_FailedToRunStreamWatcher(t *testing.T) {
 		Group:  "some_group",
 	}
 	handler := func(_ context.Context, m Message) error { return nil }
-	client, err := NewConsumer(config, handler, &checkpoint)
+	client, _ := NewConsumer(config, handler, &checkpoint)
 	streamWatcher := &MockStreamChecker{}
 	runnerFactory := &MockRunnerFactory{}
 	client.streamWatcher = streamWatcher
@@ -168,7 +168,7 @@ func TestConsumer_Run_FailedToRunStreamWatcher(t *testing.T) {
 	runnerFactory.On("Run", mock.Anything).Return(nil)
 
 	// Act
-	err = client.Run(ctx)
+	err := client.Run(ctx)
 
 	// Assert
 	Expect(err).To(HaveOccurred())
@@ -186,7 +186,7 @@ func TestConsumer_Run_FailedToRunRunnerFactory(t *testing.T) {
 		Group:  "some_group",
 	}
 	handler := func(_ context.Context, m Message) error { return nil }
-	client, err := NewConsumer(config, handler, &checkpoint)
+	client, _ := NewConsumer(config, handler, &checkpoint)
 	streamWatcher := &MockStreamChecker{}
 	runnerFactory := &MockRunnerFactory{}
 	client.streamWatcher = streamWatcher
@@ -197,7 +197,7 @@ func TestConsumer_Run_FailedToRunRunnerFactory(t *testing.T) {
 	runnerFactory.On("Run", mock.Anything).Return(fmt.Errorf("some error"))
 
 	// Act
-	err = client.Run(ctx)
+	err := client.Run(ctx)
 
 	// Assert
 	Expect(err).To(HaveOccurred())
@@ -215,7 +215,7 @@ func TestConsumer_Run_RunsWithSuccess(t *testing.T) {
 		Group:  "some_group",
 	}
 	handler := func(_ context.Context, m Message) error { return nil }
-	client, err := NewConsumer(config, handler, &checkpoint)
+	client, _ := NewConsumer(config, handler, &checkpoint)
 	streamWatcher := &MockStreamChecker{}
 	runnerFactory := &MockRunnerFactory{}
 	client.streamWatcher = streamWatcher
@@ -226,8 +226,9 @@ func TestConsumer_Run_RunsWithSuccess(t *testing.T) {
 	runnerFactory.On("Run", mock.Anything).Return(nil)
 
 	// Act
-	ctxTimeout, _ := context.WithTimeout(ctx, time.Millisecond)
-	err = client.Run(ctxTimeout)
+	ctxTimeout, cancel := context.WithTimeout(ctx, time.Millisecond)
+	cancel()
+	err := client.Run(ctxTimeout)
 
 	// Assert
 	Expect(err).ToNot(HaveOccurred())

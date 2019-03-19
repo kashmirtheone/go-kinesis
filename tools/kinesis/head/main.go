@@ -10,11 +10,11 @@ import (
 	"sync/atomic"
 
 	"github.com/pkg/errors"
-	"gitlab.com/marcoxavier/supervisor"
+	"github.com/kashmirtheone/go-supervisor"
 
-	"gitlab.com/marcoxavier/go-kinesis/checkpoint/memory"
+	"github.com/kashmirtheone/go-kinesis/checkpoint/memory"
 
-	kinesis "gitlab.com/marcoxavier/go-kinesis"
+	kinesis "github.com/kashmirtheone/go-kinesis"
 
 	logger "gitlab.com/vredens/go-logger"
 

@@ -546,7 +546,8 @@ func TestRunner_Stop_WithTimeout(t *testing.T) {
 	RegisterTestingT(t)
 
 	// Assign
-	ctx, _ := context.WithTimeout(context.TODO(), time.Nanosecond)
+	ctx, cancel := context.WithTimeout(context.TODO(), time.Nanosecond)
+	cancel()
 	closed := false
 	r := runner{
 		stopped: make(chan struct{}),

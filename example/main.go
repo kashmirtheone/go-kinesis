@@ -7,10 +7,10 @@ import (
 
 	logger "gitlab.com/vredens/go-logger"
 
-	"gitlab.com/marcoxavier/go-kinesis/checkpoint/memory"
-	"gitlab.com/marcoxavier/supervisor"
+	"github.com/kashmirtheone/go-kinesis/checkpoint/memory"
+	"github.com/kashmirtheone/go-supervisor"
 
-	kinesis "gitlab.com/marcoxavier/go-kinesis"
+	kinesis "github.com/kashmirtheone/go-kinesis"
 )
 
 var log = logger.Spawn(logger.WithTags("kinesis-consumer"))
