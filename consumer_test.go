@@ -233,3 +233,38 @@ func TestConsumer_Run_RunsWithSuccess(t *testing.T) {
 	// Assert
 	Expect(err).ToNot(HaveOccurred())
 }
+
+/*
+func TestConsumer_StartStop_WithSuccess(t *testing.T) {
+	RegisterTestingT(t)
+
+	// Assign
+	checkpoint := MockCheckpoint{}
+	config := ConsumerConfig{
+		AWS:    AWSConfig{},
+		Stream: "some_stream",
+		Group:  "some_group",
+	}
+	handler := func(_ context.Context, m Message) error { return nil }
+	client, _ := NewConsumer(config, handler, &checkpoint)
+	streamWatcher := &MockStreamChecker{}
+	runnerFactory := &MockRunnerFactory{}
+	client.streamWatcher = streamWatcher
+	client.runnerFactory = runnerFactory
+
+	streamWatcher.On("SetDeletingCallback", mock.Anything).Return()
+	streamWatcher.On("Run", mock.Anything).Return(nil)
+	runnerFactory.On("Run", mock.Anything).Return(nil)
+
+	// Act
+	go func() {
+		time.Sleep(time.Millisecond)
+		serr := client.Stop()
+		Expect(serr).ToNot(HaveOccurred())
+	}()
+	err := client.Start()
+
+	// Assert
+	Expect(err).ToNot(HaveOccurred())
+}
+*/

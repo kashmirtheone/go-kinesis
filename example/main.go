@@ -3,14 +3,15 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/signal"
 	"strconv"
+	"syscall"
 
 	logger "gitlab.com/vredens/go-logger"
 
-	"github.com/kashmirtheone/go-kinesis/checkpoint/memory"
-	"github.com/kashmirtheone/go-supervisor"
-
 	kinesis "github.com/kashmirtheone/go-kinesis"
+	"github.com/kashmirtheone/go-kinesis/checkpoint/memory"
 )
 
 var log = logger.Spawn(logger.WithTags("kinesis-consumer"))
@@ -43,8 +44,6 @@ func (l *Logger) LogEvent(event kinesis.EventLog) {
 
 func main() {
 	log := &Logger{}
-	s := supervisor.NewSupervisor()
-	s.SetLogger(log.Log)
 
 	config := kinesis.ConsumerConfig{
 		Group:  "test-consumer",
@@ -64,8 +63,6 @@ func main() {
 	}
 	consumer.SetLogger(log)
 	consumer.SetEventLogger(log)
-
-	s.AddRunner("kinesis-consumer", consumer.Run)
 
 	go func() {
 		config := kinesis.ProducerConfig{
@@ -92,5 +89,17 @@ func main() {
 		}
 	}()
 
-	s.Start()
+	// listen for termination signals
+	termChan := make(chan os.Signal, 1)
+	signal.Notify(termChan, syscall.SIGINT, syscall.SIGTERM)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	go func() {
+		<-termChan
+		cancel()
+	}()
+
+	if err := consumer.Run(ctx); err != nil {
+		panic(err)
+	}
 }

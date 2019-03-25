@@ -51,6 +51,8 @@ type Consumer struct {
 	logger        Logger
 	eventLogger   EventLogger
 	stats         ConsumerStats
+	stopped       chan struct{}
+	shutdown      chan struct{}
 }
 
 // NewConsumer creates a new kinesis consumer
@@ -74,6 +76,8 @@ func NewConsumer(config ConsumerConfig, handler MessageHandler, checkpoint Check
 		logger:      &dumbLogger{},
 		eventLogger: &dumbEventLogger{},
 		stats:       ConsumerStats{},
+		stopped:     make(chan struct{}),
+		shutdown:    make(chan struct{}),
 	}
 
 	for _, opt := range opts {
@@ -146,6 +150,23 @@ func (c *Consumer) SetEventLogger(eventLogger EventLogger) {
 	}
 }
 
+// Start starts consumer.
+func (c *Consumer) Start() error {
+	if err := c.Run(context.Background()); err != nil {
+		return err
+	}
+
+	<-c.stopped
+	return nil
+}
+
+// Stop stops consumer
+func (c *Consumer) Stop() error {
+	c.shutdown <- struct{}{}
+	<-c.stopped
+	return nil
+}
+
 // Run runs the consumer.
 func (c *Consumer) Run(ctx context.Context) error {
 	inCtx, cancel := context.WithCancel(ctx)
@@ -172,8 +193,13 @@ func (c *Consumer) Run(ctx context.Context) error {
 		}
 	}()
 
+	go func() {
+		<-c.shutdown
+		cancel()
+	}()
+
 	select {
-	case <-ctx.Done():
+	case <-inCtx.Done():
 		break
 	case err = <-errChan:
 		cancel()
@@ -181,6 +207,7 @@ func (c *Consumer) Run(ctx context.Context) error {
 
 	wg.Wait()
 
+	defer close(c.stopped)
 	if err != nil {
 		return errors.Wrap(err, "consumer terminated with errors")
 	}

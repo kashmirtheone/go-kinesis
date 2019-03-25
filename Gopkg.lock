@@ -83,17 +83,6 @@
   revision = "c2b33e84"
 
 [[projects]]
-  branch = "master"
-  digest = "1:afa9d948e066e0aa080265c5dcc730f658b7100f0da197625964352bc33dd318"
-  name = "github.com/kashmirtheone/go-supervisor"
-  packages = [
-    ".",
-    "signal",
-  ]
-  pruneopts = "UT"
-  revision = "32c1710c21a65bc3b76e50b8350380b64e825e57"
-
-[[projects]]
   digest = "1:7a137fb7718928e473b7d805434ae563ec41790d3d227cdc64e8b14d1cab8a1f"
   name = "github.com/onsi/gomega"
   packages = [
@@ -233,11 +222,11 @@
   input-imports = [
     "github.com/aws/aws-sdk-go/aws",
     "github.com/aws/aws-sdk-go/aws/awserr",
+    "github.com/aws/aws-sdk-go/aws/request",
     "github.com/aws/aws-sdk-go/aws/session",
     "github.com/aws/aws-sdk-go/service/kinesis",
     "github.com/aws/aws-sdk-go/service/kinesis/kinesisiface",
     "github.com/go-redis/redis",
-    "github.com/kashmirtheone/go-supervisor",
     "github.com/onsi/gomega",
     "github.com/pkg/errors",
     "github.com/spf13/cobra",

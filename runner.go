@@ -41,6 +41,7 @@ type runner struct {
 func (r *runner) Start(ctx context.Context) error {
 	mCtx, cancel := context.WithCancel(ctx)
 	r.shutdown = cancel
+	defer close(r.stopped)
 
 	ticker := time.NewTicker(r.tick)
 	defer ticker.Stop()
@@ -52,7 +53,6 @@ func (r *runner) Start(ctx context.Context) error {
 
 		select {
 		case <-mCtx.Done():
-			close(r.stopped)
 			return nil
 		case <-ticker.C:
 			continue

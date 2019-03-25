@@ -7,11 +7,11 @@ import (
 	"context"
 	"io/ioutil"
 	"os"
+	"os/signal"
 	"sync/atomic"
+	"syscall"
 
 	"github.com/pkg/errors"
-
-	"github.com/kashmirtheone/go-supervisor"
 
 	logger "gitlab.com/vredens/go-logger"
 
@@ -23,10 +23,9 @@ import (
 )
 
 var (
-	s         = supervisor.NewSupervisor()
+	termChan  = make(chan os.Signal, 1)
 	iteration int32
-
-	log = logger.Spawn(logger.WithTags("consumer"))
+	log       = logger.Spawn(logger.WithTags("consumer"))
 
 	stream             string
 	endpoint           string
@@ -61,8 +60,6 @@ func Run(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	s.DisableLogger()
-
 	config := kinesis.ConsumerConfig{
 		Group:  "tail",
 		Stream: stream,
@@ -90,12 +87,20 @@ func Run(cmd *cobra.Command, args []string) error {
 	if logging {
 		l := &Logger{}
 		consumer.SetLogger(l)
-		s.SetLogger(l.Log)
 	}
 
-	s.AddRunner("kinesis-tail", consumer.Run)
+	// listen for termination signals
+	signal.Notify(termChan, syscall.SIGINT, syscall.SIGTERM)
+	ctx, cancel := context.WithCancel(context.Background())
 
-	s.Start()
+	go func() {
+		<-termChan
+		cancel()
+	}()
+
+	if err := consumer.Run(ctx); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -121,9 +126,12 @@ func handler() kinesis.MessageHandler {
 
 	return func(_ context.Context, message kinesis.Message) error {
 		if number != 0 && atomic.LoadInt32(&iteration) >= int32(number) {
-			s.Shutdown()
-
-			return nil
+			select {
+			case termChan <- os.Interrupt:
+				return nil
+			default:
+				return nil
+			}
 		}
 
 		msg := message.Data
