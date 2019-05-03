@@ -4,7 +4,6 @@ import (
 	"context"
 	"sync"
 
-	"github.com/aws/aws-sdk-go/service/kinesis"
 	"github.com/pkg/errors"
 )
 
@@ -15,6 +14,14 @@ const (
 	// AfterRecordBatch is a checkpoint strategy
 	// When set it stores checkpoint in every record batch.
 	AfterRecordBatch
+	// IteratorTypeTail is a iterator type that defines that consumer starts reading from tail.
+	IteratorTypeTail IteratorType = iota
+	// IteratorTypeHead is a iterator type that defines that consumer starts reading from beginning.
+	IteratorTypeHead
+	// IteratorTypeSequence is a iterator type that defines that consumer starts reading from a sequence number.
+	IteratorTypeSequence
+	// IteratorTypeAfterSequence is a iterator type that defines that consumer starts reading from a sequence number + 1.
+	IteratorTypeAfterSequence
 )
 
 // StreamChecker checks stream state and handles it.
@@ -26,6 +33,7 @@ type StreamChecker interface {
 // RunnerFactory handler stream sharding.
 type RunnerFactory interface {
 	Run(ctx context.Context) error
+	ResetCursors()
 }
 
 // MessageHandler is the message handler.
@@ -33,6 +41,9 @@ type MessageHandler func(ctx context.Context, msg Message) error
 
 // CheckpointStrategy checkpoint behaviour.
 type CheckpointStrategy = int
+
+// IteratorType iterator type.
+type IteratorType = int
 
 // Checkpoint manages last checkpoint.
 type Checkpoint interface {
@@ -69,7 +80,8 @@ func NewConsumer(config ConsumerConfig, handler MessageHandler, checkpoint Check
 	c := &Consumer{
 		ConsumerOptions: ConsumerOptions{
 			checkpointStrategy: AfterRecordBatch,
-			iteratorType:       kinesis.ShardIteratorTypeTrimHorizon,
+			iteratorType:       IteratorTypeHead,
+			iterators:          make(map[string]ConsumerIterator),
 		},
 		stream:      config.Stream,
 		group:       config.Group,
@@ -94,27 +106,21 @@ func NewConsumer(config ConsumerConfig, handler MessageHandler, checkpoint Check
 	}
 
 	c.streamWatcher = &streamWatcher{
-		stream:      config.Stream,
-		tick:        config.StreamCheckTick,
 		client:      c.client,
+		config:      config,
 		logger:      c,
 		eventLogger: c.eventLogger,
 	}
 
 	c.runnerFactory = &runnerFactory{
-		runners:             map[string]Runner{},
-		client:              c.client,
-		group:               config.Group,
-		stream:              config.Stream,
-		checkpoint:          checkpoint,
-		handler:             handler,
-		tick:                config.RunnerFactoryTick,
-		runnerTick:          config.RunnerTick,
-		checkpointStrategy:  c.checkpointStrategy,
-		runnerIteratorType:  c.iteratorType,
-		skipReshardingOrder: c.skipReshardingOrder,
-		logger:              c,
-		eventLogger:         c,
+		runners:     sync.Map{},
+		client:      c.client,
+		config:      config,
+		options:     c.ConsumerOptions,
+		checkpoint:  checkpoint,
+		handler:     handler,
+		logger:      c,
+		eventLogger: c,
 	}
 
 	return c, nil
@@ -148,6 +154,13 @@ func (c *Consumer) SetEventLogger(eventLogger EventLogger) {
 	if eventLogger != nil {
 		c.eventLogger = eventLogger
 	}
+}
+
+// ResetIterators resets iterator for active shards.
+func (c *Consumer) ResetIterators() error {
+	c.logger.Log(LevelInfo, nil, "resetting cursors")
+	c.runnerFactory.ResetCursors()
+	return nil
 }
 
 // Start starts consumer.

@@ -3,6 +3,7 @@ package kinesis
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws/awserr"
@@ -15,26 +16,21 @@ import (
 	"github.com/aws/aws-sdk-go/service/kinesis/kinesisiface"
 )
 
-const (
-	runnerTick = time.Second
-)
-
 // runner is a single goroutine capable to listen a shard.
 type runner struct {
-	client             kinesisiface.KinesisAPI
-	handler            MessageHandler
-	shardID            string
-	group              string
-	stream             string
-	tick               time.Duration
-	checkpoint         Checkpoint
-	checkpointStrategy CheckpointStrategy
-	iteratorType       string
-	shutdown           context.CancelFunc
-	logger             Logger
-	eventLogger        EventLogger
-	closed             bool
-	stopped            chan struct{}
+	config         ConsumerConfig
+	options        ConsumerOptions
+	iteratorConfig ConsumerIterator
+	client         kinesisiface.KinesisAPI
+	handler        MessageHandler
+	shardID        string
+	checkpoint     Checkpoint
+	shutdown       context.CancelFunc
+	logger         Logger
+	eventLogger    EventLogger
+	closed         bool
+	stopped        chan struct{}
+	reset          int32
 }
 
 // Start starts runner.
@@ -43,7 +39,7 @@ func (r *runner) Start(ctx context.Context) error {
 	r.shutdown = cancel
 	defer close(r.stopped)
 
-	ticker := time.NewTicker(r.tick)
+	ticker := time.NewTicker(r.config.RunnerTick)
 	defer ticker.Stop()
 
 	for {
@@ -82,8 +78,12 @@ func (r *runner) Closed() bool {
 	return r.closed
 }
 
-func (r *runner) process(ctx context.Context) error {
+// RestartCursor orders runner to reset cursor in next iteration.
+func (r *runner) RestartCursor() {
+	atomic.SwapInt32(&r.reset, 1)
+}
 
+func (r *runner) process(ctx context.Context) error {
 	r.logger.Log(LevelDebug, nil, "getting last checkpoint")
 	lastSequence, err := r.checkpoint.Get(r.checkpointIdentifier())
 	if err != nil {
@@ -91,8 +91,16 @@ func (r *runner) process(ctx context.Context) error {
 		return nil
 	}
 
+	if lastSequence != "" {
+		r.setIteratorSequence(lastSequence)
+	}
+
+	if atomic.CompareAndSwapInt32(&r.reset, 1, 0) {
+		r.resetIteratorConfig()
+	}
+
 	r.logger.Log(LevelDebug, nil, "getting shard iterator")
-	shardIterator, err := r.getShardIterator(ctx, lastSequence)
+	shardIterator, err := r.getShardIterator(ctx)
 	if err != nil {
 		r.logger.Log(LevelError, loggerData{"cause": fmt.Sprintf("%v", err)}, "error getting shard iterator")
 		return nil
@@ -100,10 +108,14 @@ func (r *runner) process(ctx context.Context) error {
 
 	// AWS documentation recommends GetRecords to be rate limited to 1 seconds to avoid
 	// ProvisionedThroughputExceededExceptions.
-	ticker := time.NewTicker(runnerTick)
+	ticker := time.NewTicker(r.config.RunnerGetRecordsRate)
 	defer ticker.Stop() // nolint
 
 	for {
+		if atomic.LoadInt32(&r.reset) == 1 {
+			return nil
+		}
+
 		start := time.Now()
 
 		r.logger.Log(LevelDebug, nil, "getting records")
@@ -132,6 +144,12 @@ func (r *runner) process(ctx context.Context) error {
 		}
 
 		if len(resp.Records) <= 0 {
+			// TODO its commented until aws fix this
+			/*if aws.Int64Value(resp.MillisBehindLatest) == 0 {
+				r.logger.Log(LevelDebug, nil, "iterator reaches the end of stream, waiting for new records")
+				return nil
+			}*/
+
 			r.logger.Log(LevelDebug, nil, "there is no records to process, jumping to next iteration")
 			shardIterator = resp.NextShardIterator
 
@@ -141,7 +159,7 @@ func (r *runner) process(ctx context.Context) error {
 		r.logger.Log(LevelDebug, nil, "processing records")
 		for _, record := range resp.Records {
 			if err := r.processRecord(ctx, record); err != nil {
-				resp.NextShardIterator, err = r.getShardIterator(ctx, lastSequence)
+				resp.NextShardIterator, err = r.getShardIterator(ctx)
 				if err != nil {
 					r.logger.Log(LevelError, loggerData{"cause": fmt.Sprintf("%v", err)}, "error getting shard iterator")
 					return nil
@@ -152,11 +170,11 @@ func (r *runner) process(ctx context.Context) error {
 				break
 			}
 
-			lastSequence = aws.StringValue(record.SequenceNumber)
+			r.iteratorConfig.Sequence = aws.StringValue(record.SequenceNumber)
 
-			if r.checkpointStrategy == AfterRecord {
+			if r.options.checkpointStrategy == AfterRecord {
 				r.logger.Log(LevelDebug, nil, "setting checkpoint")
-				if err := r.checkpoint.Set(r.checkpointIdentifier(), lastSequence); err != nil {
+				if err := r.checkpoint.Set(r.checkpointIdentifier(), r.iteratorConfig.Sequence); err != nil {
 					r.logger.Log(LevelError, loggerData{"cause": fmt.Sprintf("%v", err)}, "error setting sequence number")
 
 					return nil
@@ -164,8 +182,8 @@ func (r *runner) process(ctx context.Context) error {
 			}
 		}
 
-		if r.checkpointStrategy == AfterRecordBatch {
-			if err := r.checkpoint.Set(r.checkpointIdentifier(), lastSequence); err != nil {
+		if r.options.checkpointStrategy == AfterRecordBatch {
+			if err := r.checkpoint.Set(r.checkpointIdentifier(), r.iteratorConfig.Sequence); err != nil {
 				r.logger.Log(LevelError, loggerData{"cause": fmt.Sprintf("%v", err)}, "error setting sequence number")
 
 				return nil
@@ -209,17 +227,17 @@ func (r *runner) processRecord(ctx context.Context, record *kinesis.Record) (err
 	return nil
 }
 
-func (r *runner) getShardIterator(ctx context.Context, sequence string) (*string, error) {
+func (r *runner) getShardIterator(ctx context.Context) (*string, error) {
+	iterator := r.iteratorConfig
+
 	getShardOptions := &kinesis.GetShardIteratorInput{
 		ShardId:           aws.String(r.shardID),
-		StreamName:        aws.String(r.stream),
-		ShardIteratorType: aws.String(r.iteratorType),
+		StreamName:        aws.String(r.config.Stream),
+		ShardIteratorType: aws.String(iterator.getType()),
 	}
 
-	if sequence != "" {
-		getShardOptions.
-			SetStartingSequenceNumber(sequence).
-			SetShardIteratorType(kinesis.ShardIteratorTypeAfterSequenceNumber)
+	if iterator.Sequence != "" {
+		getShardOptions.SetStartingSequenceNumber(iterator.Sequence)
 	}
 
 	iteratorOutput, err := r.client.GetShardIteratorWithContext(ctx, getShardOptions)
@@ -231,5 +249,15 @@ func (r *runner) getShardIterator(ctx context.Context, sequence string) (*string
 }
 
 func (r *runner) checkpointIdentifier() string {
-	return fmt.Sprintf("%s_%s_%s", r.stream, r.group, r.shardID)
+	return fmt.Sprintf("%s_%s_%s", r.config.Stream, r.config.Group, r.shardID)
+}
+
+func (r *runner) resetIteratorConfig() {
+	r.iteratorConfig.Type = IteratorTypeHead
+	r.iteratorConfig.Sequence = ""
+}
+
+func (r *runner) setIteratorSequence(sequence string) {
+	r.iteratorConfig.Sequence = sequence
+	r.iteratorConfig.Type = IteratorTypeAfterSequence
 }

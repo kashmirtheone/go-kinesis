@@ -14,8 +14,7 @@ import (
 
 // streamWatcher periodic checks stream status an notifies if is deleting.
 type streamWatcher struct {
-	stream           string
-	tick             time.Duration
+	config           ConsumerConfig
 	client           kinesisiface.KinesisAPI
 	deletingCallback func()
 	logger           Logger
@@ -24,7 +23,7 @@ type streamWatcher struct {
 
 // Run runs stream watcher.
 func (s *streamWatcher) Run(ctx context.Context) error {
-	ticker := time.NewTicker(s.tick)
+	ticker := time.NewTicker(s.config.StreamCheckTick)
 	defer ticker.Stop()
 
 	for {
@@ -54,7 +53,7 @@ func (s *streamWatcher) checkStream(ctx context.Context) error {
 	stream, err := s.client.DescribeStreamWithContext(ctx,
 		&kinesis.DescribeStreamInput{
 			Limit:      aws.Int64(1),
-			StreamName: aws.String(s.stream),
+			StreamName: aws.String(s.config.Stream),
 		},
 	)
 	if err != nil {

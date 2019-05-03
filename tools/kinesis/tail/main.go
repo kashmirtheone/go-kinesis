@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"os/signal"
@@ -34,6 +35,8 @@ var (
 	logging            bool
 	gzipDecode         bool
 	skiReshardingOrder bool
+	sequence           string
+	shard              string
 )
 
 // Command creates a new command.
@@ -50,6 +53,8 @@ func Command() *cobra.Command {
 	cmd.Flags().BoolVar(&logging, "logging", false, "enables logging, mute by default")
 	cmd.Flags().BoolVar(&gzipDecode, "gzip", false, "enables gzip decoder")
 	cmd.Flags().BoolVar(&skiReshardingOrder, "skip-resharding-order", false, "if enabled, consumer will skip ordering when resharding")
+	cmd.Flags().StringVarP(&sequence, "sequence", "", "", "specific sequence number, you also need to define a shard id ")
+	cmd.Flags().StringVarP(&shard, "shard", "", "", "shard id ")
 
 	return cmd
 }
@@ -69,16 +74,26 @@ func Run(cmd *cobra.Command, args []string) error {
 		},
 	}
 
-	var skiReshardingOrderOption = dumbConsumerOption
+	var skiReshardingOrderOption = dumbConsumerOption()
 	if skiReshardingOrder {
-		skiReshardingOrderOption = kinesis.SkipReshardingOrder
+		skiReshardingOrderOption = kinesis.SkipReshardingOrder()
+	}
+
+	var sequenceOption = dumbConsumerOption()
+	if sequence != "" {
+		if shard == "" {
+			return fmt.Errorf("you need to specify a shard id")
+		}
+
+		sequenceOption = kinesis.SinceSequence(shard, sequence)
 	}
 
 	checkpoint := memory.NewCheckpoint()
 	consumer, err := kinesis.NewConsumer(config, handler(), checkpoint,
 		kinesis.WithCheckpointStrategy(kinesis.AfterRecordBatch),
 		kinesis.SinceLatest(),
-		skiReshardingOrderOption(),
+		skiReshardingOrderOption,
+		sequenceOption,
 	)
 	if err != nil {
 		return err
@@ -125,13 +140,8 @@ func handler() kinesis.MessageHandler {
 	var f = bufio.NewWriter(os.Stdout)
 
 	return func(_ context.Context, message kinesis.Message) error {
-		if number != 0 && atomic.LoadInt32(&iteration) >= int32(number) {
-			select {
-			case termChan <- os.Interrupt:
-				return nil
-			default:
-				return nil
-			}
+		if !(number > 0 && atomic.LoadInt32(&iteration) >= int32(number)) {
+
 		}
 
 		msg := message.Data
@@ -151,6 +161,14 @@ func handler() kinesis.MessageHandler {
 		f.Flush()
 
 		atomic.AddInt32(&iteration, 1)
+		if number > 0 && atomic.LoadInt32(&iteration) >= int32(number) {
+			select {
+			case termChan <- os.Interrupt:
+				return nil
+			default:
+				return nil
+			}
+		}
 
 		return nil
 	}

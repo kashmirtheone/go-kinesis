@@ -124,13 +124,8 @@ func handler() kinesis.MessageHandler {
 	var f = bufio.NewWriter(os.Stdout)
 
 	return func(_ context.Context, message kinesis.Message) error {
-		if number != 0 && atomic.LoadInt32(&iteration) >= int32(number) {
-			select {
-			case termChan <- os.Interrupt:
-				return nil
-			default:
-				return nil
-			}
+		if !(number > 0 && atomic.LoadInt32(&iteration) >= int32(number)) {
+
 		}
 
 		msg := message.Data
@@ -150,6 +145,14 @@ func handler() kinesis.MessageHandler {
 		f.Flush()
 
 		atomic.AddInt32(&iteration, 1)
+		if number > 0 && atomic.LoadInt32(&iteration) >= int32(number) {
+			select {
+			case termChan <- os.Interrupt:
+				return nil
+			default:
+				return nil
+			}
+		}
 
 		return nil
 	}

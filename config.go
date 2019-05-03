@@ -7,9 +7,10 @@ import (
 )
 
 const (
-	defaultStreamCheckTick   = time.Second * 30
-	defaultRunnerFactoryTick = time.Second * 10
-	defaultRunnerTick        = time.Second * 5
+	defaultStreamCheckTick      = time.Second * 30
+	defaultRunnerFactoryTick    = time.Second * 10
+	defaultRunnerTick           = time.Second * 5
+	defaultRunnerGetRecordsRate = time.Millisecond * 250
 )
 
 // AWSConfig is a aws configuration.
@@ -31,12 +32,13 @@ func (c *ProducerConfig) validate() error {
 
 // ConsumerConfig is a kinesis consumer configuration.
 type ConsumerConfig struct {
-	AWS               AWSConfig     `json:"aws" mapstructure:"aws"`
-	Group             string        `json:"group" mapstructure:"group" validate:"nonzero"`
-	Stream            string        `json:"stream" mapstructure:"stream" validate:"nonzero"`
-	StreamCheckTick   time.Duration `json:"stream_tick" mapstructure:"stream_tick"`
-	RunnerFactoryTick time.Duration `json:"runner_factory_tick" mapstructure:"runner_factory_tick"`
-	RunnerTick        time.Duration `json:"runner_tick" mapstructure:"runner_tick"`
+	AWS                  AWSConfig     `json:"aws" mapstructure:"aws"`
+	Group                string        `json:"group" mapstructure:"group" validate:"nonzero"`
+	Stream               string        `json:"stream" mapstructure:"stream" validate:"nonzero"`
+	StreamCheckTick      time.Duration `json:"stream_tick" mapstructure:"stream_tick"`
+	RunnerFactoryTick    time.Duration `json:"runner_factory_tick" mapstructure:"runner_factory_tick"`
+	RunnerTick           time.Duration `json:"runner_tick" mapstructure:"runner_tick"`
+	RunnerGetRecordsRate time.Duration `json:"runner_get_records_rate" mapstructure:"runner_get_records_rate"`
 }
 
 // validate validates kinesis configuration.
@@ -56,5 +58,9 @@ func (c *ConsumerConfig) sanitize() {
 
 	if c.RunnerTick <= 0 {
 		c.RunnerTick = defaultRunnerTick
+	}
+
+	if c.RunnerGetRecordsRate <= 0 {
+		c.RunnerGetRecordsRate = defaultRunnerGetRecordsRate
 	}
 }

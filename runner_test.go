@@ -20,15 +20,13 @@ func TestRunner_Closed(t *testing.T) {
 	checkpoint := &MockCheckpoint{}
 	kinesisAPI := &KinesisAPI{}
 	r := runner{
-		client:             kinesisAPI,
-		checkpoint:         checkpoint,
-		checkpointStrategy: AfterRecordBatch,
-		stream:             "some_stream",
-		group:              "some_group",
-		tick:               time.Hour,
-		logger:             &dumbLogger{},
-		eventLogger:        &dumbEventLogger{},
-		stopped:            make(chan struct{}),
+		client:      kinesisAPI,
+		checkpoint:  checkpoint,
+		config:      config,
+		options:     options,
+		logger:      &dumbLogger{},
+		eventLogger: &dumbEventLogger{},
+		stopped:     make(chan struct{}),
 	}
 	checkpoint.On("Get", r.checkpointIdentifier()).Return("", errors.New("something failed"))
 
@@ -48,15 +46,13 @@ func TestRunner_Process_FailsToGetLastCheckpoint(t *testing.T) {
 	checkpoint := &MockCheckpoint{}
 	kinesisAPI := &KinesisAPI{}
 	r := runner{
-		client:             kinesisAPI,
-		checkpoint:         checkpoint,
-		checkpointStrategy: AfterRecordBatch,
-		stream:             "some_stream",
-		group:              "some_group",
-		tick:               time.Hour,
-		logger:             &dumbLogger{},
-		eventLogger:        &dumbEventLogger{},
-		stopped:            make(chan struct{}),
+		client:      kinesisAPI,
+		checkpoint:  checkpoint,
+		config:      config,
+		options:     options,
+		logger:      &dumbLogger{},
+		eventLogger: &dumbEventLogger{},
+		stopped:     make(chan struct{}),
 	}
 	checkpoint.On("Get", r.checkpointIdentifier()).Return("", errors.New("something failed"))
 
@@ -76,19 +72,17 @@ func TestRunner_Process_FailsGettingShardIterator(t *testing.T) {
 	checkpoint := &MockCheckpoint{}
 	kinesisAPI := &KinesisAPI{}
 	r := runner{
-		client:             kinesisAPI,
-		checkpoint:         checkpoint,
-		checkpointStrategy: AfterRecordBatch,
-		stream:             "some_stream",
-		group:              "some_group",
-		tick:               time.Hour,
-		logger:             &dumbLogger{},
-		eventLogger:        &dumbEventLogger{},
-		stopped:            make(chan struct{}),
+		client:      kinesisAPI,
+		checkpoint:  checkpoint,
+		config:      config,
+		options:     options,
+		logger:      &dumbLogger{},
+		eventLogger: &dumbEventLogger{},
+		stopped:     make(chan struct{}),
 	}
 	getShardIteratorInput := &kinesis.GetShardIteratorInput{
 		ShardId:                aws.String(r.shardID),
-		StreamName:             aws.String(r.stream),
+		StreamName:             aws.String(r.config.Stream),
 		ShardIteratorType:      aws.String(kinesis.ShardIteratorTypeAfterSequenceNumber),
 		StartingSequenceNumber: aws.String("some_sequence_number"),
 	}
@@ -111,19 +105,17 @@ func TestRunner_Process_FailsGettingRecords(t *testing.T) {
 	checkpoint := &MockCheckpoint{}
 	kinesisAPI := &KinesisAPI{}
 	r := runner{
-		client:             kinesisAPI,
-		checkpoint:         checkpoint,
-		checkpointStrategy: AfterRecordBatch,
-		stream:             "some_stream",
-		group:              "some_group",
-		tick:               time.Hour,
-		logger:             &dumbLogger{},
-		eventLogger:        &dumbEventLogger{},
-		stopped:            make(chan struct{}),
+		client:      kinesisAPI,
+		checkpoint:  checkpoint,
+		config:      config,
+		options:     options,
+		logger:      &dumbLogger{},
+		eventLogger: &dumbEventLogger{},
+		stopped:     make(chan struct{}),
 	}
 	getShardIteratorInput := &kinesis.GetShardIteratorInput{
 		ShardId:                aws.String(r.shardID),
-		StreamName:             aws.String(r.stream),
+		StreamName:             aws.String(r.config.Stream),
 		ShardIteratorType:      aws.String(kinesis.ShardIteratorTypeAfterSequenceNumber),
 		StartingSequenceNumber: aws.String("some_sequence_number"),
 	}
@@ -152,19 +144,17 @@ func TestRunner_Process_FailsGettingRecords_ErrCodeProvisionedThroughputExceeded
 	kinesisAPI := &KinesisAPI{}
 	errorMock := &Error{}
 	r := runner{
-		client:             kinesisAPI,
-		checkpoint:         checkpoint,
-		checkpointStrategy: AfterRecordBatch,
-		stream:             "some_stream",
-		group:              "some_group",
-		tick:               time.Hour,
-		logger:             &dumbLogger{},
-		eventLogger:        &dumbEventLogger{},
-		stopped:            make(chan struct{}),
+		client:      kinesisAPI,
+		checkpoint:  checkpoint,
+		config:      config,
+		options:     options,
+		logger:      &dumbLogger{},
+		eventLogger: &dumbEventLogger{},
+		stopped:     make(chan struct{}),
 	}
 	getShardIteratorInput := &kinesis.GetShardIteratorInput{
 		ShardId:                aws.String(r.shardID),
-		StreamName:             aws.String(r.stream),
+		StreamName:             aws.String(r.config.Stream),
 		ShardIteratorType:      aws.String(kinesis.ShardIteratorTypeAfterSequenceNumber),
 		StartingSequenceNumber: aws.String("some_sequence_number"),
 	}
@@ -195,22 +185,20 @@ func TestRunner_Process_ShardClosedDoNothing(t *testing.T) {
 	kinesisAPI := &KinesisAPI{}
 	closed := false
 	r := runner{
-		client:             kinesisAPI,
-		checkpoint:         checkpoint,
-		checkpointStrategy: AfterRecordBatch,
-		stream:             "some_stream",
-		group:              "some_group",
-		tick:               time.Hour,
-		logger:             &dumbLogger{},
-		eventLogger:        &dumbEventLogger{},
-		stopped:            make(chan struct{}),
+		client:      kinesisAPI,
+		checkpoint:  checkpoint,
+		config:      config,
+		options:     options,
+		logger:      &dumbLogger{},
+		eventLogger: &dumbEventLogger{},
+		stopped:     make(chan struct{}),
 		shutdown: func() {
 			closed = true
 		},
 	}
 	getShardIteratorInput := &kinesis.GetShardIteratorInput{
 		ShardId:                aws.String(r.shardID),
-		StreamName:             aws.String(r.stream),
+		StreamName:             aws.String(r.config.Stream),
 		ShardIteratorType:      aws.String(kinesis.ShardIteratorTypeAfterSequenceNumber),
 		StartingSequenceNumber: aws.String("some_sequence_number"),
 	}
@@ -242,19 +230,17 @@ func TestRunner_Process_NoRecordsDoNothing(t *testing.T) {
 	checkpoint := &MockCheckpoint{}
 	kinesisAPI := &KinesisAPI{}
 	r := runner{
-		client:             kinesisAPI,
-		checkpoint:         checkpoint,
-		checkpointStrategy: AfterRecordBatch,
-		stream:             "some_stream",
-		group:              "some_group",
-		tick:               time.Hour,
-		logger:             &dumbLogger{},
-		eventLogger:        &dumbEventLogger{},
-		stopped:            make(chan struct{}),
+		client:      kinesisAPI,
+		checkpoint:  checkpoint,
+		config:      config,
+		options:     options,
+		logger:      &dumbLogger{},
+		eventLogger: &dumbEventLogger{},
+		stopped:     make(chan struct{}),
 	}
 	getShardIteratorInput := &kinesis.GetShardIteratorInput{
 		ShardId:                aws.String(r.shardID),
-		StreamName:             aws.String(r.stream),
+		StreamName:             aws.String(r.config.Stream),
 		ShardIteratorType:      aws.String(kinesis.ShardIteratorTypeAfterSequenceNumber),
 		StartingSequenceNumber: aws.String("some_sequence_number"),
 	}
@@ -283,20 +269,18 @@ func TestRunner_Process_FailsHandleRecord(t *testing.T) {
 	checkpoint := &MockCheckpoint{}
 	kinesisAPI := &KinesisAPI{}
 	r := runner{
-		client:             kinesisAPI,
-		checkpoint:         checkpoint,
-		checkpointStrategy: AfterRecordBatch,
-		stream:             "some_stream",
-		group:              "some_group",
-		tick:               time.Hour,
-		handler:            func(_ context.Context, msg Message) error { return errors.New("something failed") },
-		logger:             &dumbLogger{},
-		eventLogger:        &dumbEventLogger{},
-		stopped:            make(chan struct{}),
+		client:      kinesisAPI,
+		checkpoint:  checkpoint,
+		config:      config,
+		options:     options,
+		handler:     func(_ context.Context, msg Message) error { return errors.New("something failed") },
+		logger:      &dumbLogger{},
+		eventLogger: &dumbEventLogger{},
+		stopped:     make(chan struct{}),
 	}
 	getShardIteratorInput := &kinesis.GetShardIteratorInput{
 		ShardId:                aws.String(r.shardID),
-		StreamName:             aws.String(r.stream),
+		StreamName:             aws.String(r.config.Stream),
 		ShardIteratorType:      aws.String(kinesis.ShardIteratorTypeAfterSequenceNumber),
 		StartingSequenceNumber: aws.String("some_sequence_number"),
 	}
@@ -327,20 +311,18 @@ func TestRunner_Process_FailsHandleRecordAndFailsGetShardIteratorWithContext(t *
 	checkpoint := &MockCheckpoint{}
 	kinesisAPI := &KinesisAPI{}
 	r := runner{
-		client:             kinesisAPI,
-		checkpoint:         checkpoint,
-		checkpointStrategy: AfterRecordBatch,
-		stream:             "some_stream",
-		group:              "some_group",
-		tick:               time.Hour,
-		handler:            func(_ context.Context, msg Message) error { return errors.New("something failed") },
-		logger:             &dumbLogger{},
-		eventLogger:        &dumbEventLogger{},
-		stopped:            make(chan struct{}),
+		client:      kinesisAPI,
+		checkpoint:  checkpoint,
+		config:      config,
+		options:     options,
+		handler:     func(_ context.Context, msg Message) error { return errors.New("something failed") },
+		logger:      &dumbLogger{},
+		eventLogger: &dumbEventLogger{},
+		stopped:     make(chan struct{}),
 	}
 	getShardIteratorInput := &kinesis.GetShardIteratorInput{
 		ShardId:                aws.String(r.shardID),
-		StreamName:             aws.String(r.stream),
+		StreamName:             aws.String(r.config.Stream),
 		ShardIteratorType:      aws.String(kinesis.ShardIteratorTypeAfterSequenceNumber),
 		StartingSequenceNumber: aws.String("some_sequence_number"),
 	}
@@ -371,22 +353,20 @@ func TestRunner_Process_PanicsHandleRecord(t *testing.T) {
 	checkpoint := &MockCheckpoint{}
 	kinesisAPI := &KinesisAPI{}
 	r := runner{
-		client:             kinesisAPI,
-		checkpoint:         checkpoint,
-		checkpointStrategy: AfterRecordBatch,
-		stream:             "some_stream",
-		group:              "some_group",
-		tick:               time.Hour,
-		logger:             &dumbLogger{},
-		eventLogger:        &dumbEventLogger{},
-		stopped:            make(chan struct{}),
+		client:      kinesisAPI,
+		checkpoint:  checkpoint,
+		config:      config,
+		options:     options,
+		logger:      &dumbLogger{},
+		eventLogger: &dumbEventLogger{},
+		stopped:     make(chan struct{}),
 		handler: func(_ context.Context, msg Message) error {
 			panic("something failed")
 		},
 	}
 	getShardIteratorInput := &kinesis.GetShardIteratorInput{
 		ShardId:                aws.String(r.shardID),
-		StreamName:             aws.String(r.stream),
+		StreamName:             aws.String(r.config.Stream),
 		ShardIteratorType:      aws.String(kinesis.ShardIteratorTypeAfterSequenceNumber),
 		StartingSequenceNumber: aws.String("some_sequence_number"),
 	}
@@ -417,20 +397,18 @@ func TestRunner_Process_HandlesWithSuccessAfterBatchStrategyFails(t *testing.T) 
 	checkpoint := &MockCheckpoint{}
 	kinesisAPI := &KinesisAPI{}
 	r := runner{
-		client:             kinesisAPI,
-		checkpoint:         checkpoint,
-		checkpointStrategy: AfterRecordBatch,
-		stream:             "some_stream",
-		group:              "some_group",
-		tick:               time.Hour,
-		logger:             &dumbLogger{},
-		eventLogger:        &dumbEventLogger{},
-		stopped:            make(chan struct{}),
-		handler:            func(_ context.Context, msg Message) error { return nil },
+		client:      kinesisAPI,
+		checkpoint:  checkpoint,
+		config:      config,
+		options:     options,
+		logger:      &dumbLogger{},
+		eventLogger: &dumbEventLogger{},
+		stopped:     make(chan struct{}),
+		handler:     func(_ context.Context, msg Message) error { return nil },
 	}
 	getShardIteratorInput := &kinesis.GetShardIteratorInput{
 		ShardId:                aws.String(r.shardID),
-		StreamName:             aws.String(r.stream),
+		StreamName:             aws.String(r.config.Stream),
 		ShardIteratorType:      aws.String(kinesis.ShardIteratorTypeAfterSequenceNumber),
 		StartingSequenceNumber: aws.String("some_sequence_number"),
 	}
@@ -461,20 +439,19 @@ func TestRunner_Process_HandlesWithSuccessAfterRecordStrategyFails(t *testing.T)
 	checkpoint := &MockCheckpoint{}
 	kinesisAPI := &KinesisAPI{}
 	r := runner{
-		client:             kinesisAPI,
-		checkpoint:         checkpoint,
-		checkpointStrategy: AfterRecord,
-		stream:             "some_stream",
-		group:              "some_group",
-		tick:               time.Hour,
-		logger:             &dumbLogger{},
-		eventLogger:        &dumbEventLogger{},
-		stopped:            make(chan struct{}),
-		handler:            func(_ context.Context, msg Message) error { return nil },
+		client:      kinesisAPI,
+		checkpoint:  checkpoint,
+		config:      config,
+		options:     options,
+		logger:      &dumbLogger{},
+		eventLogger: &dumbEventLogger{},
+		stopped:     make(chan struct{}),
+		handler:     func(_ context.Context, msg Message) error { return nil },
 	}
+	r.options.checkpointStrategy = AfterRecord
 	getShardIteratorInput := &kinesis.GetShardIteratorInput{
 		ShardId:                aws.String(r.shardID),
-		StreamName:             aws.String(r.stream),
+		StreamName:             aws.String(r.config.Stream),
 		ShardIteratorType:      aws.String(kinesis.ShardIteratorTypeAfterSequenceNumber),
 		StartingSequenceNumber: aws.String("some_sequence_number"),
 	}
@@ -506,20 +483,18 @@ func TestRunner_Process_ProcessWithSuccess(t *testing.T) {
 	checkpoint := &MockCheckpoint{}
 	kinesisAPI := &KinesisAPI{}
 	r := runner{
-		client:             kinesisAPI,
-		checkpoint:         checkpoint,
-		checkpointStrategy: AfterRecordBatch,
-		stream:             "some_stream",
-		group:              "some_group",
-		tick:               time.Hour,
-		logger:             &dumbLogger{},
-		eventLogger:        &dumbEventLogger{},
-		stopped:            make(chan struct{}),
-		handler:            func(_ context.Context, msg Message) error { return nil },
+		client:      kinesisAPI,
+		checkpoint:  checkpoint,
+		config:      config,
+		options:     options,
+		logger:      &dumbLogger{},
+		eventLogger: &dumbEventLogger{},
+		stopped:     make(chan struct{}),
+		handler:     func(_ context.Context, msg Message) error { return nil },
 	}
 	getShardIteratorInput := &kinesis.GetShardIteratorInput{
 		ShardId:                aws.String(r.shardID),
-		StreamName:             aws.String(r.stream),
+		StreamName:             aws.String(r.config.Stream),
 		ShardIteratorType:      aws.String(kinesis.ShardIteratorTypeAfterSequenceNumber),
 		StartingSequenceNumber: aws.String("some_sequence_number"),
 	}

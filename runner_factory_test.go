@@ -2,8 +2,8 @@ package kinesis
 
 import (
 	"context"
+	"sync"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/mock"
 
@@ -23,13 +23,13 @@ func TestRunnerFactory_CheckShards_Failing(t *testing.T) {
 	kinesisAPI := &KinesisAPI{}
 	factory := runnerFactory{
 		client:      kinesisAPI,
-		stream:      "some_stream",
-		group:       "some_group",
+		config:      config,
+		options:     options,
 		logger:      &dumbLogger{},
 		eventLogger: &dumbEventLogger{},
 	}
 	input := &kinesis.ListShardsInput{
-		StreamName: aws.String(factory.stream),
+		StreamName: aws.String(factory.config.Stream),
 	}
 	kinesisAPI.On("ListShardsWithContext", ctx, input).Return(nil, errors.New("something failed"))
 
@@ -48,13 +48,13 @@ func TestRunnerFactory_CheckShards_DoNothing(t *testing.T) {
 	kinesisAPI := &KinesisAPI{}
 	factory := runnerFactory{
 		client:      kinesisAPI,
-		stream:      "some_stream",
-		group:       "some_group",
+		config:      config,
+		options:     options,
 		logger:      &dumbLogger{},
 		eventLogger: &dumbEventLogger{},
 	}
 	input := &kinesis.ListShardsInput{
-		StreamName: aws.String(factory.stream),
+		StreamName: aws.String(factory.config.Stream),
 	}
 	output := &kinesis.ListShardsOutput{Shards: []*kinesis.Shard{}}
 	kinesisAPI.On("ListShardsWithContext", ctx, input).Return(output, nil)
@@ -74,17 +74,17 @@ func TestRunnerFactory_CheckShards_ShouldNotCreateRunner(t *testing.T) {
 	kinesisAPI := &KinesisAPI{}
 	factory := runnerFactory{
 		client:      kinesisAPI,
-		stream:      "some_stream",
-		group:       "some_group",
-		runners:     make(map[string]Runner),
+		config:      config,
+		options:     options,
+		runners:     sync.Map{},
 		logger:      &dumbLogger{},
 		eventLogger: &dumbEventLogger{},
 	}
 	r := &runner{shardID: "some_shard_id"}
 	parent := &runner{shardID: "parent_shard_id"}
-	factory.runners[parent.shardID] = parent
+	factory.runners.Store(parent.shardID, parent)
 	input := &kinesis.ListShardsInput{
-		StreamName: aws.String(factory.stream),
+		StreamName: aws.String(factory.config.Stream),
 	}
 	output := &kinesis.ListShardsOutput{Shards: []*kinesis.Shard{{ShardId: aws.String(r.shardID), ParentShardId: aws.String(parent.shardID)}}}
 	kinesisAPI.On("ListShardsWithContext", ctx, input).Return(output, nil)
@@ -104,18 +104,16 @@ func TestRunnerFactory_CheckShards_CreateARunner(t *testing.T) {
 	checkpoint := &MockCheckpoint{}
 	kinesisAPI := &KinesisAPI{}
 	factory := runnerFactory{
-		client:             kinesisAPI,
-		checkpoint:         checkpoint,
-		checkpointStrategy: AfterRecord,
-		stream:             "some_stream",
-		group:              "some_group",
-		runners:            make(map[string]Runner),
-		runnerTick:         time.Hour,
-		logger:             &dumbLogger{},
-		eventLogger:        &dumbEventLogger{},
+		client:      kinesisAPI,
+		config:      config,
+		options:     options,
+		checkpoint:  checkpoint,
+		runners:     sync.Map{},
+		logger:      &dumbLogger{},
+		eventLogger: &dumbEventLogger{},
 	}
 	input := &kinesis.ListShardsInput{
-		StreamName: aws.String(factory.stream),
+		StreamName: aws.String(factory.config.Stream),
 	}
 	shard := &kinesis.Shard{
 		ShardId: aws.String("some_shard_id"),
@@ -129,9 +127,9 @@ func TestRunnerFactory_CheckShards_CreateARunner(t *testing.T) {
 	//factory.Stop()
 
 	// Assert
+	runner, _ := factory.runners.Load("some_shard_id")
 	Expect(err).ToNot(HaveOccurred())
-	Expect(len(factory.runners)).To(Equal(1))
-	Expect(factory.runners["some_shard_id"]).ToNot(BeNil())
+	Expect(runner).ToNot(BeNil())
 }
 
 func TestRunnerFactory_CheckShards_CreateARunnerWithSameShardID(t *testing.T) {
@@ -142,18 +140,16 @@ func TestRunnerFactory_CheckShards_CreateARunnerWithSameShardID(t *testing.T) {
 	checkpoint := &MockCheckpoint{}
 	kinesisAPI := &KinesisAPI{}
 	factory := runnerFactory{
-		client:             kinesisAPI,
-		checkpoint:         checkpoint,
-		checkpointStrategy: AfterRecord,
-		stream:             "some_stream",
-		group:              "some_group",
-		runners:            make(map[string]Runner),
-		runnerTick:         time.Hour,
-		logger:             &dumbLogger{},
-		eventLogger:        &dumbEventLogger{},
+		client:      kinesisAPI,
+		options:     options,
+		config:      config,
+		checkpoint:  checkpoint,
+		runners:     sync.Map{},
+		logger:      &dumbLogger{},
+		eventLogger: &dumbEventLogger{},
 	}
 	input := &kinesis.ListShardsInput{
-		StreamName: aws.String(factory.stream),
+		StreamName: aws.String(factory.config.Stream),
 	}
 	shard1 := &kinesis.Shard{
 		ShardId: aws.String("some_shard_id"),
@@ -169,9 +165,9 @@ func TestRunnerFactory_CheckShards_CreateARunnerWithSameShardID(t *testing.T) {
 	err := factory.checkShards(ctx)
 
 	// Assert
+	runner, _ := factory.runners.Load("some_shard_id")
 	Expect(err).ToNot(HaveOccurred())
-	Expect(len(factory.runners)).To(Equal(1))
-	Expect(factory.runners["some_shard_id"]).ToNot(BeNil())
+	Expect(runner).ToNot(BeNil())
 }
 
 func TestRunnerFactory_ShouldStart_WithSkipReshardingOrder(t *testing.T) {
@@ -179,19 +175,21 @@ func TestRunnerFactory_ShouldStart_WithSkipReshardingOrder(t *testing.T) {
 
 	// Assign
 	factory := runnerFactory{
-		runners:             make(map[string]Runner),
-		skipReshardingOrder: true,
+		runners: sync.Map{},
+		config:  config,
+		options: options,
 	}
+	factory.options.skipReshardingOrder = true
 	r := &runner{shardID: "some_shard_id"}
-	factory.runners[r.shardID] = r
+	factory.runners.Store(r.shardID, r)
 	shard := &kinesis.Shard{ShardId: aws.String(r.shardID)}
 
 	// Act
 	shouldStart := factory.shouldStart(shard)
 
 	// Assert
-	Expect(len(factory.runners)).To(Equal(1))
-	Expect(factory.runners["some_shard_id"]).ToNot(BeNil())
+	runner, _ := factory.runners.Load("some_shard_id")
+	Expect(runner).ToNot(BeNil())
 	Expect(shouldStart).To(BeTrue())
 }
 
@@ -200,18 +198,20 @@ func TestRunnerFactory_ShouldStart_WithoutShardParentID(t *testing.T) {
 
 	// Assign
 	factory := runnerFactory{
-		runners: make(map[string]Runner),
+		runners: sync.Map{},
+		config:  config,
+		options: options,
 	}
 	r := &runner{shardID: "some_shard_id"}
-	factory.runners[r.shardID] = r
+	factory.runners.Store(r.shardID, r)
 	shard := &kinesis.Shard{ShardId: aws.String(r.shardID)}
 
 	// Act
 	shouldStart := factory.shouldStart(shard)
 
 	// Assert
-	Expect(len(factory.runners)).To(Equal(1))
-	Expect(factory.runners["some_shard_id"]).ToNot(BeNil())
+	runner, _ := factory.runners.Load("some_shard_id")
+	Expect(runner).ToNot(BeNil())
 	Expect(shouldStart).To(BeTrue())
 }
 
@@ -220,18 +220,20 @@ func TestRunnerFactory_ShouldStart_WithUnexistingParentShardID(t *testing.T) {
 
 	// Assign
 	factory := runnerFactory{
-		runners: make(map[string]Runner),
+		runners: sync.Map{},
+		config:  config,
+		options: options,
 	}
 	r := &runner{shardID: "some_shard_id"}
-	factory.runners[r.shardID] = r
+	factory.runners.Store(r.shardID, r)
 	shard := &kinesis.Shard{ShardId: aws.String(r.shardID), ParentShardId: aws.String("unexisting_parent_shard_id")}
 
 	// Act
 	shouldStart := factory.shouldStart(shard)
 
 	// Assert
-	Expect(len(factory.runners)).To(Equal(1))
-	Expect(factory.runners["some_shard_id"]).ToNot(BeNil())
+	runner, _ := factory.runners.Load("some_shard_id")
+	Expect(runner).ToNot(BeNil())
 	Expect(shouldStart).To(BeTrue())
 }
 
@@ -240,21 +242,24 @@ func TestRunnerFactory_ShouldStart_WithClosedParentShardID(t *testing.T) {
 
 	// Assign
 	factory := runnerFactory{
-		runners: make(map[string]Runner),
+		runners: sync.Map{},
+		config:  config,
+		options: options,
 	}
 	r := &runner{shardID: "some_shard_id"}
 	parent := &runner{shardID: "parent_shard_id", closed: true}
-	factory.runners[r.shardID] = r
-	factory.runners[parent.shardID] = parent
+	factory.runners.Store(r.shardID, r)
+	factory.runners.Store(parent.shardID, parent)
 	shard := &kinesis.Shard{ShardId: aws.String(r.shardID), ParentShardId: aws.String(parent.shardID)}
 
 	// Act
 	shouldStart := factory.shouldStart(shard)
 
 	// Assert
-	Expect(len(factory.runners)).To(Equal(2))
-	Expect(factory.runners[r.shardID]).ToNot(BeNil())
-	Expect(factory.runners[parent.shardID]).ToNot(BeNil())
+	runner, _ := factory.runners.Load(r.shardID)
+	parentRunner, _ := factory.runners.Load(parent.shardID)
+	Expect(runner).ToNot(BeNil())
+	Expect(parentRunner).ToNot(BeNil())
 	Expect(shouldStart).To(BeTrue())
 }
 
@@ -263,21 +268,24 @@ func TestRunnerFactory_ShouldStart_WithNotClosedParentShardID(t *testing.T) {
 
 	// Assign
 	factory := runnerFactory{
-		runners: make(map[string]Runner),
+		runners: sync.Map{},
+		config:  config,
+		options: options,
 	}
 	r := &runner{shardID: "some_shard_id"}
 	parent := &runner{shardID: "parent_shard_id"}
-	factory.runners[r.shardID] = r
-	factory.runners[parent.shardID] = parent
+	factory.runners.Store(r.shardID, r)
+	factory.runners.Store(parent.shardID, parent)
 	shard := &kinesis.Shard{ShardId: aws.String(r.shardID), ParentShardId: aws.String(parent.shardID)}
 
 	// Act
 	shouldStart := factory.shouldStart(shard)
 
 	// Assert
-	Expect(len(factory.runners)).To(Equal(2))
-	Expect(factory.runners[r.shardID]).ToNot(BeNil())
-	Expect(factory.runners[parent.shardID]).ToNot(BeNil())
+	runner, _ := factory.runners.Load(r.shardID)
+	parentRunner, _ := factory.runners.Load(parent.shardID)
+	Expect(runner).ToNot(BeNil())
+	Expect(parentRunner).ToNot(BeNil())
 	Expect(shouldStart).To(BeFalse())
 }
 
@@ -286,21 +294,24 @@ func TestRunnerFactory_ShouldStart_WithoutShardAdjacentID(t *testing.T) {
 
 	// Assign
 	factory := runnerFactory{
-		runners: make(map[string]Runner),
+		runners: sync.Map{},
+		config:  config,
+		options: options,
 	}
 	r := &runner{shardID: "some_shard_id"}
 	parent := &runner{shardID: "parent_shard_id", closed: true}
-	factory.runners[r.shardID] = r
-	factory.runners[parent.shardID] = parent
+	factory.runners.Store(r.shardID, r)
+	factory.runners.Store(parent.shardID, parent)
 	shard := &kinesis.Shard{ShardId: aws.String(r.shardID), ParentShardId: aws.String(parent.shardID)}
 
 	// Act
 	shouldStart := factory.shouldStart(shard)
 
 	// Assert
-	Expect(len(factory.runners)).To(Equal(2))
-	Expect(factory.runners[r.shardID]).ToNot(BeNil())
-	Expect(factory.runners[parent.shardID]).ToNot(BeNil())
+	runner, _ := factory.runners.Load(r.shardID)
+	parentRunner, _ := factory.runners.Load(parent.shardID)
+	Expect(runner).ToNot(BeNil())
+	Expect(parentRunner).ToNot(BeNil())
 	Expect(shouldStart).To(BeTrue())
 }
 
@@ -309,21 +320,24 @@ func TestRunnerFactory_ShouldStart_WithUnexistingAdjacentShardID(t *testing.T) {
 
 	// Assign
 	factory := runnerFactory{
-		runners: make(map[string]Runner),
+		runners: sync.Map{},
+		config:  config,
+		options: options,
 	}
 	r := &runner{shardID: "some_shard_id"}
 	parent := &runner{shardID: "parent_shard_id", closed: true}
-	factory.runners[r.shardID] = r
-	factory.runners[parent.shardID] = parent
+	factory.runners.Store(r.shardID, r)
+	factory.runners.Store(parent.shardID, parent)
 	shard := &kinesis.Shard{ShardId: aws.String(r.shardID), ParentShardId: aws.String(parent.shardID), AdjacentParentShardId: aws.String("nonexistent_adjacent_shard_id")}
 
 	// Act
 	shouldStart := factory.shouldStart(shard)
 
 	// Assert
-	Expect(len(factory.runners)).To(Equal(2))
-	Expect(factory.runners[r.shardID]).ToNot(BeNil())
-	Expect(factory.runners[parent.shardID]).ToNot(BeNil())
+	runner, _ := factory.runners.Load(r.shardID)
+	parentRunner, _ := factory.runners.Load(parent.shardID)
+	Expect(runner).ToNot(BeNil())
+	Expect(parentRunner).ToNot(BeNil())
 	Expect(shouldStart).To(BeTrue())
 }
 
@@ -332,24 +346,28 @@ func TestRunnerFactory_ShouldStart_WithClosedAdjacentShardID(t *testing.T) {
 
 	// Assign
 	factory := runnerFactory{
-		runners: make(map[string]Runner),
+		runners: sync.Map{},
+		config:  config,
+		options: options,
 	}
 	r := &runner{shardID: "some_shard_id"}
 	parent := &runner{shardID: "parent_shard_id", closed: true}
 	adjacent := &runner{shardID: "adjacent_shard_id", closed: true}
-	factory.runners[r.shardID] = r
-	factory.runners[parent.shardID] = parent
-	factory.runners[adjacent.shardID] = adjacent
+	factory.runners.Store(r.shardID, r)
+	factory.runners.Store(parent.shardID, parent)
+	factory.runners.Store(adjacent.shardID, adjacent)
 	shard := &kinesis.Shard{ShardId: aws.String(r.shardID), ParentShardId: aws.String(parent.shardID), AdjacentParentShardId: aws.String(adjacent.shardID)}
 
 	// Act
 	shouldStart := factory.shouldStart(shard)
 
 	// Assert
-	Expect(len(factory.runners)).To(Equal(3))
-	Expect(factory.runners[r.shardID]).ToNot(BeNil())
-	Expect(factory.runners[parent.shardID]).ToNot(BeNil())
-	Expect(factory.runners[adjacent.shardID]).ToNot(BeNil())
+	runner, _ := factory.runners.Load(r.shardID)
+	parentRunner, _ := factory.runners.Load(parent.shardID)
+	adjacentRunner, _ := factory.runners.Load(adjacent.shardID)
+	Expect(runner).ToNot(BeNil())
+	Expect(parentRunner).ToNot(BeNil())
+	Expect(adjacentRunner).ToNot(BeNil())
 	Expect(shouldStart).To(BeTrue())
 }
 
@@ -358,23 +376,27 @@ func TestRunnerFactory_ShouldStart_WithNotClosedAdjacentShardID(t *testing.T) {
 
 	// Assign
 	factory := runnerFactory{
-		runners: make(map[string]Runner),
+		runners: sync.Map{},
+		config:  config,
+		options: options,
 	}
 	r := &runner{shardID: "some_shard_id"}
 	parent := &runner{shardID: "parent_shard_id", closed: true}
 	adjacent := &runner{shardID: "adjacent_shard_id"}
-	factory.runners[r.shardID] = r
-	factory.runners[parent.shardID] = parent
-	factory.runners[adjacent.shardID] = adjacent
+	factory.runners.Store(r.shardID, r)
+	factory.runners.Store(parent.shardID, parent)
+	factory.runners.Store(adjacent.shardID, adjacent)
 	shard := &kinesis.Shard{ShardId: aws.String(r.shardID), ParentShardId: aws.String(parent.shardID), AdjacentParentShardId: aws.String(adjacent.shardID)}
 
 	// Act
 	shouldStart := factory.shouldStart(shard)
 
 	// Assert
-	Expect(len(factory.runners)).To(Equal(3))
-	Expect(factory.runners[r.shardID]).ToNot(BeNil())
-	Expect(factory.runners[parent.shardID]).ToNot(BeNil())
-	Expect(factory.runners[adjacent.shardID]).ToNot(BeNil())
+	runner, _ := factory.runners.Load(r.shardID)
+	parentRunner, _ := factory.runners.Load(parent.shardID)
+	adjacentRunner, _ := factory.runners.Load(adjacent.shardID)
+	Expect(runner).ToNot(BeNil())
+	Expect(parentRunner).ToNot(BeNil())
+	Expect(adjacentRunner).ToNot(BeNil())
 	Expect(shouldStart).To(BeFalse())
 }

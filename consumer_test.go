@@ -11,6 +11,20 @@ import (
 	. "github.com/onsi/gomega"
 )
 
+var (
+	config = ConsumerConfig{
+		Stream:               "some_stream",
+		Group:                "some_group",
+		RunnerTick:           time.Hour,
+		StreamCheckTick:      time.Nanosecond,
+		RunnerGetRecordsRate: time.Second,
+	}
+	options = ConsumerOptions{
+		checkpointStrategy: AfterRecordBatch,
+		iteratorType:       IteratorTypeHead,
+	}
+)
+
 func TestConsumer_NewConsumer_InvalidConfiguration(t *testing.T) {
 	RegisterTestingT(t)
 

@@ -3,7 +3,6 @@ package kinesis
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/mock"
 
@@ -23,13 +22,13 @@ func TestStreamWatcher_CheckStream_Failing(t *testing.T) {
 	kinesisAPI := &KinesisAPI{}
 	watcher := streamWatcher{
 		client:      kinesisAPI,
-		stream:      "some_stream",
+		config:      config,
 		logger:      &dumbLogger{},
 		eventLogger: &dumbEventLogger{},
 	}
 	describe := &kinesis.DescribeStreamInput{
 		Limit:      aws.Int64(1),
-		StreamName: aws.String(watcher.stream),
+		StreamName: aws.String(watcher.config.Stream),
 	}
 
 	kinesisAPI.On("DescribeStreamWithContext", ctx, describe).Return(nil, errors.New("something failed"))
@@ -53,14 +52,14 @@ func TestStreamWatcher_CheckStream_NothingToDo(t *testing.T) {
 	}
 	watcher := streamWatcher{
 		client:           kinesisAPI,
-		stream:           "some_stream",
+		config:           config,
 		deletingCallback: deletingCallback,
 		logger:           &dumbLogger{},
 		eventLogger:      &dumbEventLogger{},
 	}
 	describe := &kinesis.DescribeStreamInput{
 		Limit:      aws.Int64(1),
-		StreamName: aws.String(watcher.stream),
+		StreamName: aws.String(watcher.config.Stream),
 	}
 	response := &kinesis.DescribeStreamOutput{
 		StreamDescription: &kinesis.StreamDescription{StreamStatus: aws.String("some_status")},
@@ -88,13 +87,13 @@ func TestStreamWatcher_CheckStream_DeletingStream(t *testing.T) {
 	}
 	watcher := streamWatcher{
 		client:      kinesisAPI,
-		stream:      "some_stream",
+		config:      config,
 		logger:      &dumbLogger{},
 		eventLogger: &dumbEventLogger{},
 	}
 	describe := &kinesis.DescribeStreamInput{
 		Limit:      aws.Int64(1),
-		StreamName: aws.String(watcher.stream),
+		StreamName: aws.String(watcher.config.Stream),
 	}
 	response := &kinesis.DescribeStreamOutput{
 		StreamDescription: &kinesis.StreamDescription{StreamStatus: aws.String(kinesis.StreamStatusDeleting)},
@@ -120,14 +119,13 @@ func TestStreamWatcher_Run_ReturnsError(t *testing.T) {
 	mockLogger := &MockLogger{}
 	watcher := streamWatcher{
 		client:      kinesisAPI,
-		stream:      "some_stream",
-		tick:        time.Nanosecond,
+		config:      config,
 		logger:      mockLogger,
 		eventLogger: &dumbEventLogger{},
 	}
 	describe := &kinesis.DescribeStreamInput{
 		Limit:      aws.Int64(1),
-		StreamName: aws.String(watcher.stream),
+		StreamName: aws.String(watcher.config.Stream),
 	}
 	called := false
 	kinesisAPI.On("DescribeStreamWithContext", mock.Anything, describe).Return(nil, errors.New("something failed"))
