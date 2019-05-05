@@ -100,7 +100,7 @@ func (r *runner) process(ctx context.Context) error {
 	}
 
 	r.logger.Log(LevelDebug, nil, "getting shard iterator")
-	shardIterator, err := r.getShardIterator(ctx)
+	shardIterator, err := r.getShardIterator()
 	if err != nil {
 		r.logger.Log(LevelError, loggerData{"cause": fmt.Sprintf("%v", err)}, "error getting shard iterator")
 		return nil
@@ -119,7 +119,7 @@ func (r *runner) process(ctx context.Context) error {
 		start := time.Now()
 
 		r.logger.Log(LevelDebug, nil, "getting records")
-		resp, err := r.client.GetRecordsWithContext(ctx, &kinesis.GetRecordsInput{
+		resp, err := r.client.GetRecords(&kinesis.GetRecordsInput{
 			ShardIterator: shardIterator,
 		})
 		if err != nil {
@@ -151,17 +151,18 @@ func (r *runner) process(ctx context.Context) error {
 			}*/
 
 			r.logger.Log(LevelDebug, nil, "there is no records to process, jumping to next iteration")
-			shardIterator = resp.NextShardIterator
 
+			shardIterator = resp.NextShardIterator
 			goto next
 		}
 
 		r.logger.Log(LevelDebug, nil, "processing records")
 		for _, record := range resp.Records {
-			if err := r.processRecord(ctx, record); err != nil {
-				resp.NextShardIterator, err = r.getShardIterator(ctx)
-				if err != nil {
-					r.logger.Log(LevelError, loggerData{"cause": fmt.Sprintf("%v", err)}, "error getting shard iterator")
+			if err := r.processRecord(record); err != nil {
+				var ierr error
+				resp.NextShardIterator, ierr = r.getShardIterator()
+				if ierr != nil {
+					r.logger.Log(LevelError, loggerData{"cause": fmt.Sprintf("%v", ierr)}, "error getting shard iterator")
 					return nil
 				}
 
@@ -179,6 +180,12 @@ func (r *runner) process(ctx context.Context) error {
 
 					return nil
 				}
+			}
+
+			select {
+			case <-ctx.Done():
+				goto next
+			default:
 			}
 		}
 
@@ -204,7 +211,7 @@ func (r *runner) process(ctx context.Context) error {
 	}
 }
 
-func (r *runner) processRecord(ctx context.Context, record *kinesis.Record) (err error) {
+func (r *runner) processRecord(record *kinesis.Record) (err error) {
 	start := time.Now()
 	defer func() {
 		if p := recover(); p != nil {
@@ -220,14 +227,14 @@ func (r *runner) processRecord(ctx context.Context, record *kinesis.Record) (err
 
 	message := Message{Partition: aws.StringValue(record.PartitionKey), Data: record.Data}
 
-	if err := r.handler(ctx, message); err != nil {
+	if err := r.handler(context.Background(), message); err != nil {
 		return errors.Wrap(err, "error handling message")
 	}
 
 	return nil
 }
 
-func (r *runner) getShardIterator(ctx context.Context) (*string, error) {
+func (r *runner) getShardIterator() (*string, error) {
 	iterator := r.iteratorConfig
 
 	getShardOptions := &kinesis.GetShardIteratorInput{
@@ -240,7 +247,7 @@ func (r *runner) getShardIterator(ctx context.Context) (*string, error) {
 		getShardOptions.SetStartingSequenceNumber(iterator.Sequence)
 	}
 
-	iteratorOutput, err := r.client.GetShardIteratorWithContext(ctx, getShardOptions)
+	iteratorOutput, err := r.client.GetShardIterator(getShardOptions)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get shard iterator")
 	}

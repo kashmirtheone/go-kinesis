@@ -87,7 +87,7 @@ func TestRunner_Process_FailsGettingShardIterator(t *testing.T) {
 		StartingSequenceNumber: aws.String("some_sequence_number"),
 	}
 	checkpoint.On("Get", r.checkpointIdentifier()).Return("some_sequence_number", nil)
-	kinesisAPI.On("GetShardIteratorWithContext", ctx, getShardIteratorInput).Return(nil, errors.New("something failed"))
+	kinesisAPI.On("GetShardIterator", getShardIteratorInput).Return(nil, errors.New("something failed"))
 
 	// Act
 	err := r.process(ctx)
@@ -124,8 +124,8 @@ func TestRunner_Process_FailsGettingRecords(t *testing.T) {
 		ShardIterator: getShardIteratorOutput.ShardIterator,
 	}
 	checkpoint.On("Get", r.checkpointIdentifier()).Return("some_sequence_number", nil)
-	kinesisAPI.On("GetShardIteratorWithContext", ctx, getShardIteratorInput).Return(getShardIteratorOutput, nil)
-	kinesisAPI.On("GetRecordsWithContext", ctx, getRecordsInput).Return(nil, errors.New("something failed"))
+	kinesisAPI.On("GetShardIterator", getShardIteratorInput).Return(getShardIteratorOutput, nil)
+	kinesisAPI.On("GetRecords", getRecordsInput).Return(nil, errors.New("something failed"))
 
 	// Act
 	err := r.process(ctx)
@@ -164,8 +164,8 @@ func TestRunner_Process_FailsGettingRecords_ErrCodeProvisionedThroughputExceeded
 	}
 	errorMock.On("Code").Return(kinesis.ErrCodeProvisionedThroughputExceededException)
 	checkpoint.On("Get", r.checkpointIdentifier()).Return("some_sequence_number", nil)
-	kinesisAPI.On("GetShardIteratorWithContext", ctx, getShardIteratorInput).Return(getShardIteratorOutput, nil)
-	kinesisAPI.On("GetRecordsWithContext", ctx, getRecordsInput).Return(nil, errorMock)
+	kinesisAPI.On("GetShardIterator", getShardIteratorInput).Return(getShardIteratorOutput, nil)
+	kinesisAPI.On("GetRecords", getRecordsInput).Return(nil, errorMock)
 
 	// Act
 	err := r.process(ctx)
@@ -208,8 +208,8 @@ func TestRunner_Process_ShardClosedDoNothing(t *testing.T) {
 	}
 	getRecordsOutput := &kinesis.GetRecordsOutput{NextShardIterator: nil}
 	checkpoint.On("Get", r.checkpointIdentifier()).Return("some_sequence_number", nil)
-	kinesisAPI.On("GetShardIteratorWithContext", ctx, getShardIteratorInput).Return(getShardIteratorOutput, nil)
-	kinesisAPI.On("GetRecordsWithContext", ctx, getRecordsInput).Return(getRecordsOutput, nil)
+	kinesisAPI.On("GetShardIterator", getShardIteratorInput).Return(getShardIteratorOutput, nil)
+	kinesisAPI.On("GetRecords", getRecordsInput).Return(getRecordsOutput, nil)
 
 	// Act
 	err := r.process(ctx)
@@ -250,8 +250,8 @@ func TestRunner_Process_NoRecordsDoNothing(t *testing.T) {
 	}
 	getRecordsOutput := &kinesis.GetRecordsOutput{Records: make([]*kinesis.Record, 0), NextShardIterator: aws.String("some_shard_iterator")}
 	checkpoint.On("Get", r.checkpointIdentifier()).Return("some_sequence_number", nil)
-	kinesisAPI.On("GetShardIteratorWithContext", nCtx, getShardIteratorInput).Return(getShardIteratorOutput, nil)
-	kinesisAPI.On("GetRecordsWithContext", nCtx, getRecordsInput).Return(getRecordsOutput, nil)
+	kinesisAPI.On("GetShardIterator", getShardIteratorInput).Return(getShardIteratorOutput, nil)
+	kinesisAPI.On("GetRecords", getRecordsInput).Return(getRecordsOutput, nil)
 
 	// Act
 	err := r.process(nCtx)
@@ -291,8 +291,8 @@ func TestRunner_Process_FailsHandleRecord(t *testing.T) {
 	record := &kinesis.Record{PartitionKey: aws.String("some_partition"), Data: []byte("some_data"), SequenceNumber: aws.String("some_sequence_number2")}
 	getRecordsOutput := &kinesis.GetRecordsOutput{NextShardIterator: aws.String("some_shard_iterator"), Records: []*kinesis.Record{record}}
 	checkpoint.On("Get", r.checkpointIdentifier()).Return("some_sequence_number", nil)
-	kinesisAPI.On("GetShardIteratorWithContext", ctx, getShardIteratorInput).Return(getShardIteratorOutput, nil)
-	kinesisAPI.On("GetRecordsWithContext", ctx, getRecordsInput).Return(getRecordsOutput, nil)
+	kinesisAPI.On("GetShardIterator", getShardIteratorInput).Return(getShardIteratorOutput, nil)
+	kinesisAPI.On("GetRecords", getRecordsInput).Return(getRecordsOutput, nil)
 	checkpoint.On("Set", r.checkpointIdentifier(), "some_sequence_number").Return(errors.New("something failed"))
 
 	// Act
@@ -303,7 +303,7 @@ func TestRunner_Process_FailsHandleRecord(t *testing.T) {
 	Expect(kinesisAPI.AssertExpectations(t)).To(BeTrue(), "Should try to get records")
 }
 
-func TestRunner_Process_FailsHandleRecordAndFailsGetShardIteratorWithContext(t *testing.T) {
+func TestRunner_Process_FailsHandleRecordAndFailsGetShardIterator(t *testing.T) {
 	RegisterTestingT(t)
 
 	// Assign
@@ -333,9 +333,9 @@ func TestRunner_Process_FailsHandleRecordAndFailsGetShardIteratorWithContext(t *
 	record := &kinesis.Record{PartitionKey: aws.String("some_partition"), Data: []byte("some_data"), SequenceNumber: aws.String("some_sequence_number2")}
 	getRecordsOutput := &kinesis.GetRecordsOutput{NextShardIterator: aws.String("some_shard_iterator"), Records: []*kinesis.Record{record}}
 	checkpoint.On("Get", r.checkpointIdentifier()).Return("some_sequence_number", nil)
-	kinesisAPI.On("GetShardIteratorWithContext", ctx, getShardIteratorInput).Return(getShardIteratorOutput, nil).Once()
-	kinesisAPI.On("GetRecordsWithContext", ctx, getRecordsInput).Return(getRecordsOutput, nil)
-	kinesisAPI.On("GetShardIteratorWithContext", ctx, getShardIteratorInput).Return(nil, errors.New("something failed"))
+	kinesisAPI.On("GetShardIterator", getShardIteratorInput).Return(getShardIteratorOutput, nil).Once()
+	kinesisAPI.On("GetRecords", getRecordsInput).Return(getRecordsOutput, nil)
+	kinesisAPI.On("GetShardIterator", getShardIteratorInput).Return(nil, errors.New("something failed"))
 
 	// Act
 	err := r.process(ctx)
@@ -377,8 +377,8 @@ func TestRunner_Process_PanicsHandleRecord(t *testing.T) {
 	record := &kinesis.Record{PartitionKey: aws.String("some_partition"), Data: []byte("some_data"), SequenceNumber: aws.String("some_sequence_number2")}
 	getRecordsOutput := &kinesis.GetRecordsOutput{NextShardIterator: aws.String("some_shard_iterator"), Records: []*kinesis.Record{record}}
 	checkpoint.On("Get", r.checkpointIdentifier()).Return("some_sequence_number", nil)
-	kinesisAPI.On("GetShardIteratorWithContext", ctx, getShardIteratorInput).Return(getShardIteratorOutput, nil)
-	kinesisAPI.On("GetRecordsWithContext", ctx, getRecordsInput).Return(getRecordsOutput, nil)
+	kinesisAPI.On("GetShardIterator", getShardIteratorInput).Return(getShardIteratorOutput, nil)
+	kinesisAPI.On("GetRecords", getRecordsInput).Return(getRecordsOutput, nil)
 	checkpoint.On("Set", r.checkpointIdentifier(), "some_sequence_number").Return(errors.New("something failed"))
 
 	// Act
@@ -419,8 +419,8 @@ func TestRunner_Process_HandlesWithSuccessAfterBatchStrategyFails(t *testing.T) 
 	record := &kinesis.Record{PartitionKey: aws.String("some_partition"), Data: []byte("some_data"), SequenceNumber: aws.String("some_sequence_number2")}
 	getRecordsOutput := &kinesis.GetRecordsOutput{NextShardIterator: aws.String("some_shard_iterator"), Records: []*kinesis.Record{record}}
 	checkpoint.On("Get", r.checkpointIdentifier()).Return("some_sequence_number", nil)
-	kinesisAPI.On("GetShardIteratorWithContext", ctx, getShardIteratorInput).Return(getShardIteratorOutput, nil)
-	kinesisAPI.On("GetRecordsWithContext", ctx, getRecordsInput).Return(getRecordsOutput, nil)
+	kinesisAPI.On("GetShardIterator", getShardIteratorInput).Return(getShardIteratorOutput, nil)
+	kinesisAPI.On("GetRecords", getRecordsInput).Return(getRecordsOutput, nil)
 	checkpoint.On("Set", r.checkpointIdentifier(), "some_sequence_number2").Return(errors.New("something failed"))
 
 	// Act
@@ -462,8 +462,8 @@ func TestRunner_Process_HandlesWithSuccessAfterRecordStrategyFails(t *testing.T)
 	record := &kinesis.Record{PartitionKey: aws.String("some_partition"), Data: []byte("some_data"), SequenceNumber: aws.String("some_sequence_number2")}
 	getRecordsOutput := &kinesis.GetRecordsOutput{NextShardIterator: aws.String("some_shard_iterator"), Records: []*kinesis.Record{record}}
 	checkpoint.On("Get", r.checkpointIdentifier()).Return("some_sequence_number", nil)
-	kinesisAPI.On("GetShardIteratorWithContext", ctx, getShardIteratorInput).Return(getShardIteratorOutput, nil)
-	kinesisAPI.On("GetRecordsWithContext", ctx, getRecordsInput).Return(getRecordsOutput, nil)
+	kinesisAPI.On("GetShardIterator", getShardIteratorInput).Return(getShardIteratorOutput, nil)
+	kinesisAPI.On("GetRecords", getRecordsInput).Return(getRecordsOutput, nil)
 	checkpoint.On("Set", r.checkpointIdentifier(), "some_sequence_number2").Return(errors.New("something failed"))
 
 	// Act
@@ -505,8 +505,8 @@ func TestRunner_Process_ProcessWithSuccess(t *testing.T) {
 	record := &kinesis.Record{PartitionKey: aws.String("some_partition"), Data: []byte("some_data"), SequenceNumber: aws.String("some_sequence_number2")}
 	getRecordsOutput := &kinesis.GetRecordsOutput{NextShardIterator: aws.String("some_shard_iterator"), Records: []*kinesis.Record{record}}
 	checkpoint.On("Get", r.checkpointIdentifier()).Return("some_sequence_number", nil)
-	kinesisAPI.On("GetShardIteratorWithContext", ctx, getShardIteratorInput).Return(getShardIteratorOutput, nil)
-	kinesisAPI.On("GetRecordsWithContext", ctx, getRecordsInput).Return(getRecordsOutput, nil)
+	kinesisAPI.On("GetShardIterator", getShardIteratorInput).Return(getShardIteratorOutput, nil)
+	kinesisAPI.On("GetRecords", getRecordsInput).Return(getRecordsOutput, nil)
 	checkpoint.On("Set", r.checkpointIdentifier(), "some_sequence_number2").Return(nil)
 
 	// Act

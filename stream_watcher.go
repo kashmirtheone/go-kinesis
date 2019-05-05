@@ -27,7 +27,7 @@ func (s *streamWatcher) Run(ctx context.Context) error {
 	defer ticker.Stop()
 
 	for {
-		if err := s.checkStream(ctx); err != nil {
+		if err := s.checkStream(); err != nil {
 			s.logger.Log(LevelError, loggerData{"cause": fmt.Sprintf("%v", err)}, "failed to check stream status")
 		}
 
@@ -45,12 +45,12 @@ func (s *streamWatcher) SetDeletingCallback(cb func()) {
 	s.deletingCallback = cb
 }
 
-func (s *streamWatcher) checkStream(ctx context.Context) error {
+func (s *streamWatcher) checkStream() error {
 	start := time.Now()
 	defer s.eventLogger.LogEvent(EventLog{Event: StreamCheckedTriggered, Elapse: time.Now().Sub(start)})
 
 	s.logger.Log(LevelDebug, nil, "checking stream status")
-	stream, err := s.client.DescribeStreamWithContext(ctx,
+	stream, err := s.client.DescribeStream(
 		&kinesis.DescribeStreamInput{
 			Limit:      aws.Int64(1),
 			StreamName: aws.String(s.config.Stream),

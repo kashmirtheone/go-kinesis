@@ -18,7 +18,6 @@ func TestStreamWatcher_CheckStream_Failing(t *testing.T) {
 	RegisterTestingT(t)
 
 	// Assign
-	ctx := context.TODO()
 	kinesisAPI := &KinesisAPI{}
 	watcher := streamWatcher{
 		client:      kinesisAPI,
@@ -31,10 +30,10 @@ func TestStreamWatcher_CheckStream_Failing(t *testing.T) {
 		StreamName: aws.String(watcher.config.Stream),
 	}
 
-	kinesisAPI.On("DescribeStreamWithContext", ctx, describe).Return(nil, errors.New("something failed"))
+	kinesisAPI.On("DescribeStream", describe).Return(nil, errors.New("something failed"))
 
 	// Act
-	err := watcher.checkStream(ctx)
+	err := watcher.checkStream()
 
 	// Assert
 	Expect(err).To(HaveOccurred())
@@ -44,7 +43,6 @@ func TestStreamWatcher_CheckStream_NothingToDo(t *testing.T) {
 	RegisterTestingT(t)
 
 	// Assign
-	ctx := context.TODO()
 	kinesisAPI := &KinesisAPI{}
 	deleted := false
 	deletingCallback := func() {
@@ -65,10 +63,10 @@ func TestStreamWatcher_CheckStream_NothingToDo(t *testing.T) {
 		StreamDescription: &kinesis.StreamDescription{StreamStatus: aws.String("some_status")},
 	}
 
-	kinesisAPI.On("DescribeStreamWithContext", ctx, describe).Return(response, nil)
+	kinesisAPI.On("DescribeStream", describe).Return(response, nil)
 
 	// Act
-	err := watcher.checkStream(ctx)
+	err := watcher.checkStream()
 
 	// Assert
 	Expect(err).ToNot(HaveOccurred())
@@ -79,7 +77,6 @@ func TestStreamWatcher_CheckStream_DeletingStream(t *testing.T) {
 	RegisterTestingT(t)
 
 	// Assign
-	ctx := context.TODO()
 	kinesisAPI := &KinesisAPI{}
 	deleted := false
 	deletingCallback := func() {
@@ -99,11 +96,11 @@ func TestStreamWatcher_CheckStream_DeletingStream(t *testing.T) {
 		StreamDescription: &kinesis.StreamDescription{StreamStatus: aws.String(kinesis.StreamStatusDeleting)},
 	}
 
-	kinesisAPI.On("DescribeStreamWithContext", ctx, describe).Return(response, nil)
+	kinesisAPI.On("DescribeStream", describe).Return(response, nil)
 
 	// Act
 	watcher.SetDeletingCallback(deletingCallback)
-	err := watcher.checkStream(ctx)
+	err := watcher.checkStream()
 
 	// Assert
 	Expect(err).ToNot(HaveOccurred())
@@ -128,7 +125,7 @@ func TestStreamWatcher_Run_ReturnsError(t *testing.T) {
 		StreamName: aws.String(watcher.config.Stream),
 	}
 	called := false
-	kinesisAPI.On("DescribeStreamWithContext", mock.Anything, describe).Return(nil, errors.New("something failed"))
+	kinesisAPI.On("DescribeStream", describe).Return(nil, errors.New("something failed"))
 	mockLogger.On("Log", LevelError, mock.Anything, mock.Anything, mock.Anything).Run(func(_ mock.Arguments) {
 		called = true
 	})

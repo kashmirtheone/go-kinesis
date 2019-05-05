@@ -43,7 +43,7 @@ func (f *runnerFactory) checkShards(ctx context.Context) error {
 	}
 
 	f.logger.Log(LevelDebug, nil, "fetching shards")
-	result, err := f.client.ListShardsWithContext(ctx, input)
+	result, err := f.client.ListShards(input)
 	if err != nil {
 		f.logger.Log(LevelError, loggerData{"cause": fmt.Sprintf("%v", err)}, "failed to fetch shards")
 		return nil

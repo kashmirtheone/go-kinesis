@@ -31,7 +31,7 @@ func TestRunnerFactory_CheckShards_Failing(t *testing.T) {
 	input := &kinesis.ListShardsInput{
 		StreamName: aws.String(factory.config.Stream),
 	}
-	kinesisAPI.On("ListShardsWithContext", ctx, input).Return(nil, errors.New("something failed"))
+	kinesisAPI.On("ListShards", input).Return(nil, errors.New("something failed"))
 
 	// Act
 	err := factory.checkShards(ctx)
@@ -57,7 +57,7 @@ func TestRunnerFactory_CheckShards_DoNothing(t *testing.T) {
 		StreamName: aws.String(factory.config.Stream),
 	}
 	output := &kinesis.ListShardsOutput{Shards: []*kinesis.Shard{}}
-	kinesisAPI.On("ListShardsWithContext", ctx, input).Return(output, nil)
+	kinesisAPI.On("ListShards", input).Return(output, nil)
 
 	// Act
 	err := factory.checkShards(ctx)
@@ -87,7 +87,7 @@ func TestRunnerFactory_CheckShards_ShouldNotCreateRunner(t *testing.T) {
 		StreamName: aws.String(factory.config.Stream),
 	}
 	output := &kinesis.ListShardsOutput{Shards: []*kinesis.Shard{{ShardId: aws.String(r.shardID), ParentShardId: aws.String(parent.shardID)}}}
-	kinesisAPI.On("ListShardsWithContext", ctx, input).Return(output, nil)
+	kinesisAPI.On("ListShards", input).Return(output, nil)
 
 	// Act
 	err := factory.checkShards(ctx)
@@ -119,7 +119,7 @@ func TestRunnerFactory_CheckShards_CreateARunner(t *testing.T) {
 		ShardId: aws.String("some_shard_id"),
 	}
 	output := &kinesis.ListShardsOutput{Shards: []*kinesis.Shard{shard}}
-	kinesisAPI.On("ListShardsWithContext", ctx, input).Return(output, nil)
+	kinesisAPI.On("ListShards", input).Return(output, nil)
 	checkpoint.On("Get", mock.Anything).Return("", errors.New("something failed"))
 
 	// Act
@@ -158,7 +158,7 @@ func TestRunnerFactory_CheckShards_CreateARunnerWithSameShardID(t *testing.T) {
 		ShardId: aws.String("some_shard_id"),
 	}
 	output := &kinesis.ListShardsOutput{Shards: []*kinesis.Shard{shard1, shard2}}
-	kinesisAPI.On("ListShardsWithContext", ctx, input).Return(output, nil)
+	kinesisAPI.On("ListShards", input).Return(output, nil)
 	checkpoint.On("Get", mock.Anything).Return("", errors.New("something failed"))
 
 	// Act
