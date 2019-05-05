@@ -225,7 +225,7 @@ func (r *runner) processRecord(record *kinesis.Record) (err error) {
 		}
 	}()
 
-	message := Message{Partition: aws.StringValue(record.PartitionKey), Data: record.Data}
+	message := Message{ShardID: r.shardID, PartitionKey: aws.StringValue(record.PartitionKey), Data: record.Data}
 
 	if err := r.handler(context.Background(), message); err != nil {
 		return errors.Wrap(err, "error handling message")

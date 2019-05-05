@@ -37,7 +37,7 @@ func NewProducer(config ProducerConfig) (*Producer, error) {
 func (producer Producer) PublishWithContext(ctx context.Context, message Message) error {
 	input := &kinesis.PutRecordInput{
 		Data:         message.Data,
-		PartitionKey: aws.String(message.Partition),
+		PartitionKey: aws.String(message.PartitionKey),
 		StreamName:   aws.String(producer.stream),
 	}
 
@@ -56,7 +56,7 @@ func (producer Producer) PublishBatchWithContext(ctx context.Context, messages [
 	for _, m := range messages {
 		record := &kinesis.PutRecordsRequestEntry{
 			Data:         m.Data,
-			PartitionKey: aws.String(m.Partition),
+			PartitionKey: aws.String(m.PartitionKey),
 		}
 
 		records = append(records, record)
@@ -79,7 +79,7 @@ func (producer Producer) PublishBatchWithContext(ctx context.Context, messages [
 func (producer Producer) Publish(message Message) error {
 	input := &kinesis.PutRecordInput{
 		Data:         message.Data,
-		PartitionKey: aws.String(message.Partition),
+		PartitionKey: aws.String(message.PartitionKey),
 		StreamName:   aws.String(producer.stream),
 	}
 
@@ -98,7 +98,7 @@ func (producer Producer) PublishBatch(messages []Message) error {
 	for _, m := range messages {
 		record := &kinesis.PutRecordsRequestEntry{
 			Data:         m.Data,
-			PartitionKey: aws.String(m.Partition),
+			PartitionKey: aws.String(m.PartitionKey),
 		}
 
 		records = append(records, record)

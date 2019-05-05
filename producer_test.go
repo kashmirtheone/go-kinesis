@@ -51,7 +51,7 @@ func TestProducer_PublishBatchWithContext_Failed(t *testing.T) {
 	config := ProducerConfig{
 		Stream: "some_stream",
 	}
-	messages := []Message{{Partition: "some_partition", Data: []byte("some_data")}}
+	messages := []Message{{PartitionKey: "some_partition", Data: []byte("some_data")}}
 	kinesisAPI := &KinesisAPI{}
 	kinesisAPI.On("PutRecordsWithContext", ctx, mock.Anything).Return(nil, errors.New("something failed"))
 
@@ -73,7 +73,7 @@ func TestProducer_PublishBatchWithContext_Success(t *testing.T) {
 	config := ProducerConfig{
 		Stream: "some_stream",
 	}
-	messages := []Message{{Partition: "some_partition", Data: []byte("some_data")}}
+	messages := []Message{{PartitionKey: "some_partition", Data: []byte("some_data")}}
 	kinesisAPI := &KinesisAPI{}
 	kinesisAPI.On("PutRecordsWithContext", ctx, mock.Anything).Return(&kinesis.PutRecordsOutput{}, nil)
 
@@ -95,7 +95,7 @@ func TestProducer_PublishWithContext_Failed(t *testing.T) {
 	config := ProducerConfig{
 		Stream: "some_stream",
 	}
-	message := Message{Partition: "some_partition", Data: []byte("some_data")}
+	message := Message{PartitionKey: "some_partition", Data: []byte("some_data")}
 	kinesisAPI := &KinesisAPI{}
 	kinesisAPI.On("PutRecordWithContext", ctx, mock.Anything).Return(nil, errors.New("something failed"))
 
@@ -117,7 +117,7 @@ func TestProducer_PublishWithContext_Success(t *testing.T) {
 	config := ProducerConfig{
 		Stream: "some_stream",
 	}
-	message := Message{Partition: "some_partition", Data: []byte("some_data")}
+	message := Message{PartitionKey: "some_partition", Data: []byte("some_data")}
 	kinesisAPI := &KinesisAPI{}
 	kinesisAPI.On("PutRecordWithContext", ctx, mock.Anything).Return(&kinesis.PutRecordOutput{}, nil)
 
@@ -138,7 +138,7 @@ func TestProducer_PublishBatch_Failed(t *testing.T) {
 	config := ProducerConfig{
 		Stream: "some_stream",
 	}
-	messages := []Message{{Partition: "some_partition", Data: []byte("some_data")}}
+	messages := []Message{{PartitionKey: "some_partition", Data: []byte("some_data")}}
 	kinesisAPI := &KinesisAPI{}
 	kinesisAPI.On("PutRecords", mock.Anything).Return(nil, errors.New("something failed"))
 
@@ -159,7 +159,7 @@ func TestProducer_PublishBatch_Success(t *testing.T) {
 	config := ProducerConfig{
 		Stream: "some_stream",
 	}
-	messages := []Message{{Partition: "some_partition", Data: []byte("some_data")}}
+	messages := []Message{{PartitionKey: "some_partition", Data: []byte("some_data")}}
 	kinesisAPI := &KinesisAPI{}
 	kinesisAPI.On("PutRecords", mock.Anything).Return(&kinesis.PutRecordsOutput{}, nil)
 
@@ -180,7 +180,7 @@ func TestProducer_Publish_Failed(t *testing.T) {
 	config := ProducerConfig{
 		Stream: "some_stream",
 	}
-	message := Message{Partition: "some_partition", Data: []byte("some_data")}
+	message := Message{PartitionKey: "some_partition", Data: []byte("some_data")}
 	kinesisAPI := &KinesisAPI{}
 	kinesisAPI.On("PutRecord", mock.Anything).Return(nil, errors.New("something failed"))
 
@@ -201,7 +201,7 @@ func TestProducer_Publish_Success(t *testing.T) {
 	config := ProducerConfig{
 		Stream: "some_stream",
 	}
-	message := Message{Partition: "some_partition", Data: []byte("some_data")}
+	message := Message{PartitionKey: "some_partition", Data: []byte("some_data")}
 	kinesisAPI := &KinesisAPI{}
 	kinesisAPI.On("PutRecord", mock.Anything).Return(&kinesis.PutRecordOutput{}, nil)
 

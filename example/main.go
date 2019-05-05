@@ -17,7 +17,7 @@ import (
 var log = logger.Spawn(logger.WithTags("kinesis-consumer"))
 
 func handler(_ context.Context, message kinesis.Message) error {
-	fmt.Printf("partition: %s, data: %s\n", message.Partition, string(message.Data))
+	fmt.Printf("partition: %s, data: %s\n", message.PartitionKey, string(message.Data))
 	return nil
 }
 
@@ -81,7 +81,7 @@ func main() {
 
 		for i := 0; i < 40; i++ {
 			msg := fmt.Sprintf(`{"msg": "message received %d!!"}`, i)
-			messages = append(messages, kinesis.Message{Partition: strconv.Itoa(i), Data: []byte(msg)})
+			messages = append(messages, kinesis.Message{PartitionKey: strconv.Itoa(i), Data: []byte(msg)})
 		}
 
 		if err := producer.PublishBatch(messages); err != nil {
