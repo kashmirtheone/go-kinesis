@@ -150,7 +150,7 @@ func (r *runner) process(ctx context.Context) error {
 				return nil
 			}*/
 			// Workaround while aws doesn't fix resp.MillisBehindLatest
-			if i%100 == 0 {
+			if i%10 == 0 {
 				return nil
 			}
 
