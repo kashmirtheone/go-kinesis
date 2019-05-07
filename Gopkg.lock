@@ -157,12 +157,12 @@
   version = "v1.3.0"
 
 [[projects]]
-  digest = "1:d2971b4c5be423bfd6cf91c025c7ef068f3b2820a7900e9cc5cb1aeb14a51e15"
+  branch = "master"
+  digest = "1:8d69c6e26c897f6dda9bb37cd72540cde10a681747f21d6bbf3ad506fc4d152f"
   name = "gitlab.com/vredens/go-logger"
   packages = ["."]
   pruneopts = "UT"
-  revision = "45939c993f086cd3bac74c6aa3d5bad16cde3765"
-  version = "v1.3.1"
+  revision = "120d5437c5f81eb7843b4b8bc6edd573729f9a09"
 
 [[projects]]
   branch = "master"

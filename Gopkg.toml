@@ -1,6 +1,6 @@
 [[constraint]]
 	name = "gitlab.com/vredens/go-logger"
-	version = "^v1.3.1"
+	branch = "master"
 
 [prune]
   go-tests = true

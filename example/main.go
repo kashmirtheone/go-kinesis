@@ -14,7 +14,7 @@ import (
 	"github.com/kashmirtheone/go-kinesis/checkpoint/memory"
 )
 
-var log = logger.Spawn(logger.WithTags("kinesis-consumer"))
+var log = logger.Spawn(logger.ConfigTags("kinesis-consumer"))
 
 func handler(_ context.Context, message kinesis.Message) error {
 	fmt.Printf("partition: %s, data: %s\n", message.PartitionKey, string(message.Data))

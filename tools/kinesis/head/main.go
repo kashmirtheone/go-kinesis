@@ -24,7 +24,7 @@ import (
 var (
 	termChan  = make(chan os.Signal, 1)
 	iteration int32
-	log       = logger.Spawn(logger.WithTags("consumer"))
+	log       = logger.Spawn(logger.ConfigTags("consumer"))
 
 	stream             string
 	endpoint           string
