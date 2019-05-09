@@ -65,9 +65,9 @@ func WithSpecificIterators(iterators map[string]ConsumerIterator) ConsumerOption
 	}
 }
 
-// WithSpecificShards allows you to set a filtered shards.
+// WithShards allows you to set a filtered shards.
 // Consumer only reads specified shards ids.
-func WithSpecificShards(shardIDs []string) ConsumerOption {
+func WithShards(shardIDs ...string) ConsumerOption {
 	return func(c *ConsumerOptions) {
 		if shardIDs != nil {
 			c.specificShards = make(map[string]bool)

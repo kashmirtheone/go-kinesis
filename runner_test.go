@@ -176,6 +176,88 @@ func TestRunner_Process_FailsGettingRecords_ErrCodeProvisionedThroughputExceeded
 	Expect(errorMock.AssertExpectations(t)).To(BeTrue(), "Gets error code")
 }
 
+func TestRunner_Process_FailsGettingRecords_ErrCodeExpiredIteratorException(t *testing.T) {
+	RegisterTestingT(t)
+
+	// Assign
+	ctx := context.TODO()
+	checkpoint := &MockCheckpoint{}
+	kinesisAPI := &KinesisAPI{}
+	errorMock := &Error{}
+	r := runner{
+		client:      kinesisAPI,
+		checkpoint:  checkpoint,
+		config:      config,
+		options:     options,
+		logger:      &dumbLogger{},
+		eventLogger: &dumbEventLogger{},
+		stopped:     make(chan struct{}),
+	}
+	getShardIteratorInput := &kinesis.GetShardIteratorInput{
+		ShardId:                aws.String(r.shardID),
+		StreamName:             aws.String(r.config.Stream),
+		ShardIteratorType:      aws.String(kinesis.ShardIteratorTypeAfterSequenceNumber),
+		StartingSequenceNumber: aws.String("some_sequence_number"),
+	}
+	getShardIteratorOutput := &kinesis.GetShardIteratorOutput{ShardIterator: aws.String("some_shard_iterator")}
+	getRecordsInput := &kinesis.GetRecordsInput{
+		ShardIterator: getShardIteratorOutput.ShardIterator,
+	}
+	errorMock.On("Code").Return(kinesis.ErrCodeExpiredIteratorException)
+	checkpoint.On("Get", r.checkpointIdentifier()).Return("some_sequence_number", nil)
+	kinesisAPI.On("GetShardIterator", getShardIteratorInput).Return(getShardIteratorOutput, nil)
+	kinesisAPI.On("GetRecords", getRecordsInput).Return(nil, errorMock)
+
+	// Act
+	err := r.process(ctx)
+
+	// Assert
+	Expect(err).ToNot(HaveOccurred())
+	Expect(kinesisAPI.AssertExpectations(t)).To(BeTrue(), "Should try to get records")
+	Expect(errorMock.AssertExpectations(t)).To(BeTrue(), "Gets error code")
+}
+
+func TestRunner_Process_FailsGettingRecords_ErrCodeExpiredNextTokenException(t *testing.T) {
+	RegisterTestingT(t)
+
+	// Assign
+	ctx := context.TODO()
+	checkpoint := &MockCheckpoint{}
+	kinesisAPI := &KinesisAPI{}
+	errorMock := &Error{}
+	r := runner{
+		client:      kinesisAPI,
+		checkpoint:  checkpoint,
+		config:      config,
+		options:     options,
+		logger:      &dumbLogger{},
+		eventLogger: &dumbEventLogger{},
+		stopped:     make(chan struct{}),
+	}
+	getShardIteratorInput := &kinesis.GetShardIteratorInput{
+		ShardId:                aws.String(r.shardID),
+		StreamName:             aws.String(r.config.Stream),
+		ShardIteratorType:      aws.String(kinesis.ShardIteratorTypeAfterSequenceNumber),
+		StartingSequenceNumber: aws.String("some_sequence_number"),
+	}
+	getShardIteratorOutput := &kinesis.GetShardIteratorOutput{ShardIterator: aws.String("some_shard_iterator")}
+	getRecordsInput := &kinesis.GetRecordsInput{
+		ShardIterator: getShardIteratorOutput.ShardIterator,
+	}
+	errorMock.On("Code").Return(kinesis.ErrCodeExpiredNextTokenException)
+	checkpoint.On("Get", r.checkpointIdentifier()).Return("some_sequence_number", nil)
+	kinesisAPI.On("GetShardIterator", getShardIteratorInput).Return(getShardIteratorOutput, nil)
+	kinesisAPI.On("GetRecords", getRecordsInput).Return(nil, errorMock)
+
+	// Act
+	err := r.process(ctx)
+
+	// Assert
+	Expect(err).ToNot(HaveOccurred())
+	Expect(kinesisAPI.AssertExpectations(t)).To(BeTrue(), "Should try to get records")
+	Expect(errorMock.AssertExpectations(t)).To(BeTrue(), "Gets error code")
+}
+
 func TestRunner_Process_ShardClosedDoNothing(t *testing.T) {
 	RegisterTestingT(t)
 

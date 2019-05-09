@@ -111,7 +111,7 @@ func (r *runner) process(ctx context.Context) error {
 	ticker := time.NewTicker(r.config.RunnerGetRecordsRate)
 	defer ticker.Stop() // nolint
 
-	for i := 1; true; i++ {
+	for i := 0; true; i++ {
 		if atomic.LoadInt32(&r.reset) == 1 {
 			return nil
 		}
@@ -123,11 +123,17 @@ func (r *runner) process(ctx context.Context) error {
 			ShardIterator: shardIterator,
 		})
 		if err != nil {
-			aerr, ok := err.(awserr.Error)
-			if ok && aerr.Code() == kinesis.ErrCodeProvisionedThroughputExceededException {
-				r.logger.Log(LevelInfo, nil, "the request rate for the stream is too high or the requested Data is too large for the available throughput, waiting...")
+			if aerr, ok := err.(awserr.Error); ok {
+				switch aerr.Code() {
+				case kinesis.ErrCodeProvisionedThroughputExceededException:
+					r.logger.Log(LevelDebug, nil, "the request rate for the stream is too high or the requested Data is too large for the available throughput, waiting...")
 
-				return nil
+					return nil
+				case kinesis.ErrCodeExpiredIteratorException, kinesis.ErrCodeExpiredNextTokenException:
+					r.logger.Log(LevelDebug, nil, "the provided iterator exceeds the maximum age allowed, getting new iterator...")
+
+					return nil
+				}
 			}
 
 			r.logger.Log(LevelError, loggerData{"cause": fmt.Sprintf("%v", err)}, "error getting records")
@@ -150,7 +156,7 @@ func (r *runner) process(ctx context.Context) error {
 				return nil
 			}*/
 			// Workaround while aws doesn't fix resp.MillisBehindLatest
-			if i%10 == 0 {
+			if i >= 10 {
 				return nil
 			}
 
