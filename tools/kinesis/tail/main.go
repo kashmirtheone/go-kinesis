@@ -140,8 +140,8 @@ func handler() kinesis.MessageHandler {
 	var f = bufio.NewWriter(os.Stdout)
 
 	return func(_ context.Context, message kinesis.Message) error {
-		if !(number > 0 && atomic.LoadInt32(&iteration) >= int32(number)) {
-
+		if number > 0 && atomic.LoadInt32(&iteration) >= int32(number) {
+			return nil
 		}
 
 		msg := message.Data
