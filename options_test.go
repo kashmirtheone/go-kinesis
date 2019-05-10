@@ -54,7 +54,7 @@ func TestOptions_WithSpecificShards(t *testing.T) {
 	options := ConsumerOptions{}
 
 	// Act
-	WithShards([]string{"some_id"})(&options)
+	WithShards("some_id")(&options)
 
 	// Assert
 	Expect(options.specificShards["some_id"]).ToNot(BeNil())
