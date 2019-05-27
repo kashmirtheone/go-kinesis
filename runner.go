@@ -155,10 +155,6 @@ func (r *runner) process(ctx context.Context) error {
 				r.logger.Log(LevelDebug, nil, "iterator reaches the end of stream, waiting for new records")
 				return nil
 			}*/
-			// Workaround while aws doesn't fix resp.MillisBehindLatest
-			if i >= 10 {
-				return nil
-			}
 
 			r.logger.Log(LevelDebug, nil, "there is no records to process, jumping to next iteration")
 
