@@ -26,6 +26,7 @@ type runner struct {
 	shardID        string
 	checkpoint     Checkpoint
 	shutdown       context.CancelFunc
+	started        int32
 	logger         Logger
 	eventLogger    EventLogger
 	closed         bool
@@ -41,6 +42,10 @@ func (r *runner) Start(ctx context.Context) error {
 
 	ticker := time.NewTicker(r.config.RunnerTick)
 	defer ticker.Stop()
+
+	if atomic.CompareAndSwapInt32(&r.started, 1, 0) {
+		return fmt.Errorf("runner was stopped before started, try running it again")
+	}
 
 	for {
 		if err := r.process(mCtx); err != nil {
@@ -58,6 +63,10 @@ func (r *runner) Start(ctx context.Context) error {
 
 // Stop stops runner.
 func (r *runner) Stop(ctx context.Context) error {
+	if !atomic.CompareAndSwapInt32(&r.started, 1, 0) {
+		return nil
+	}
+
 	r.shutdown()
 
 	select {

@@ -608,6 +608,7 @@ func TestRunner_Stop_WithTimeout(t *testing.T) {
 	closed := false
 	r := runner{
 		stopped: make(chan struct{}),
+		started: 1,
 		shutdown: func() {
 			closed = true
 		},
@@ -621,6 +622,22 @@ func TestRunner_Stop_WithTimeout(t *testing.T) {
 	Expect(closed).To(BeTrue())
 }
 
+func TestRunner_Stop_Stopped_Runner(t *testing.T) {
+	RegisterTestingT(t)
+
+	// Assign
+	ctx := context.TODO()
+	r := runner{
+		stopped: make(chan struct{}),
+	}
+
+	// Act
+	err := r.Stop(ctx)
+
+	// Assert
+	Expect(err).ToNot(HaveOccurred())
+}
+
 func TestRunner_Stop_WithSuccess(t *testing.T) {
 	RegisterTestingT(t)
 
@@ -629,6 +646,7 @@ func TestRunner_Stop_WithSuccess(t *testing.T) {
 	closed := false
 	r := runner{
 		stopped: make(chan struct{}),
+		started: 1,
 		shutdown: func() {
 			closed = true
 		},
