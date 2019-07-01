@@ -1,7 +1,0 @@
-[[constraint]]
-	name = "gitlab.com/vredens/go-logger"
-	branch = "master"
-
-[prune]
-  go-tests = true
-  unused-packages = true

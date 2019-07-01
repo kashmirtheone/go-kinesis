@@ -1,6 +1,7 @@
 package kinesis
 
 import (
+	"github.com/golang/mock/gomock"
 	"testing"
 	"time"
 
@@ -11,6 +12,9 @@ func TestAverageStats_Add(t *testing.T) {
 	RegisterTestingT(t)
 
 	// Assign
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
 	stats := AverageStats{}
 
 	// Act
@@ -27,6 +31,9 @@ func TestStats_Handler(t *testing.T) {
 	RegisterTestingT(t)
 
 	// Assign
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
 	stats := ConsumerStats{}
 
 	// Act

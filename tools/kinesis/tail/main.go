@@ -18,7 +18,7 @@ import (
 
 	"github.com/kashmirtheone/go-kinesis/checkpoint/memory"
 
-	kinesis "github.com/kashmirtheone/go-kinesis"
+	kinesis "github.com/kashmirtheone/go-kinesis/kinesis"
 
 	"github.com/spf13/cobra"
 )

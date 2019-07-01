@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/mock"
+	"github.com/golang/mock/gomock"
 
 	. "github.com/onsi/gomega"
 )
@@ -29,12 +29,15 @@ func TestConsumer_NewConsumer_InvalidConfiguration(t *testing.T) {
 	RegisterTestingT(t)
 
 	// Assign
-	checkpoint := MockCheckpoint{}
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	checkpoint := NewMockCheckpoint(mockCtrl)
 	config := ConsumerConfig{}
 	handler := func(_ context.Context, m Message) error { return nil }
 
 	// Act
-	client, err := NewConsumer(config, handler, &checkpoint)
+	client, err := NewConsumer(config, handler, checkpoint)
 
 	// Assert
 	Expect(err).To(HaveOccurred())
@@ -45,7 +48,10 @@ func TestConsumer_NewConsumer_InvalidHandler(t *testing.T) {
 	RegisterTestingT(t)
 
 	// Assign
-	checkpoint := MockCheckpoint{}
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	checkpoint := NewMockCheckpoint(mockCtrl)
 	config := ConsumerConfig{
 		AWS:    AWSConfig{},
 		Stream: "some_stream",
@@ -53,7 +59,7 @@ func TestConsumer_NewConsumer_InvalidHandler(t *testing.T) {
 	}
 
 	// Act
-	client, err := NewConsumer(config, nil, &checkpoint)
+	client, err := NewConsumer(config, nil, checkpoint)
 
 	// Assert
 	Expect(err).To(HaveOccurred())
@@ -64,7 +70,10 @@ func TestConsumer_NewConsumer_Success(t *testing.T) {
 	RegisterTestingT(t)
 
 	// Assign
-	checkpoint := MockCheckpoint{}
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	checkpoint := NewMockCheckpoint(mockCtrl)
 	config := ConsumerConfig{
 		AWS:    AWSConfig{},
 		Stream: "some_stream",
@@ -73,7 +82,7 @@ func TestConsumer_NewConsumer_Success(t *testing.T) {
 	handler := func(_ context.Context, m Message) error { return nil }
 
 	// Act
-	client, err := NewConsumer(config, handler, &checkpoint)
+	client, err := NewConsumer(config, handler, checkpoint)
 
 	// Assert
 	Expect(err).ToNot(HaveOccurred())
@@ -86,14 +95,17 @@ func TestConsumer_Stats(t *testing.T) {
 	RegisterTestingT(t)
 
 	// Assign
-	checkpoint := MockCheckpoint{}
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	checkpoint := NewMockCheckpoint(mockCtrl)
 	config := ConsumerConfig{
 		AWS:    AWSConfig{},
 		Stream: "some_stream",
 		Group:  "some_group",
 	}
 	handler := func(_ context.Context, m Message) error { return nil }
-	client, err := NewConsumer(config, handler, &checkpoint)
+	client, err := NewConsumer(config, handler, checkpoint)
 	client.stats.RecordsFailed.Count = 1
 
 	// Act
@@ -108,17 +120,20 @@ func TestConsumer_Log(t *testing.T) {
 	RegisterTestingT(t)
 
 	// Assign
-	checkpoint := MockCheckpoint{}
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	checkpoint := NewMockCheckpoint(mockCtrl)
 	config := ConsumerConfig{
 		AWS:    AWSConfig{},
 		Stream: "some_stream",
 		Group:  "some_group",
 	}
 	handler := func(_ context.Context, m Message) error { return nil }
-	client, err := NewConsumer(config, handler, &checkpoint)
+	client, err := NewConsumer(config, handler, checkpoint)
 	var called bool
-	log := &MockLogger{}
-	log.On("Log", "some_level", mock.Anything, "some_format", mock.Anything).Run(func(args mock.Arguments) {
+	log := NewMockLogger(mockCtrl)
+	log.EXPECT().Log("some_level", gomock.Any(), "some_format", gomock.Any()).DoAndReturn(func(arg0, arg1, arg2 interface{}, arg3 ...interface{}) {
 		called = true
 	})
 
@@ -135,18 +150,21 @@ func TestConsumer_LogEvent(t *testing.T) {
 	RegisterTestingT(t)
 
 	// Assign
-	checkpoint := MockCheckpoint{}
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	checkpoint := NewMockCheckpoint(mockCtrl)
 	config := ConsumerConfig{
 		AWS:    AWSConfig{},
 		Stream: "some_stream",
 		Group:  "some_group",
 	}
 	handler := func(_ context.Context, m Message) error { return nil }
-	client, err := NewConsumer(config, handler, &checkpoint)
+	client, err := NewConsumer(config, handler, checkpoint)
 	var called bool
-	log := &MockEventLogger{}
+	log := NewMockEventLogger(mockCtrl)
 	event := EventLog{Event: "some_event"}
-	log.On("LogEvent", event).Run(func(args mock.Arguments) {
+	log.EXPECT().LogEvent(event).DoAndReturn(func(interface{}) {
 		called = true
 	})
 
@@ -163,23 +181,26 @@ func TestConsumer_Run_FailedToRunStreamWatcher(t *testing.T) {
 	RegisterTestingT(t)
 
 	// Assign
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
 	ctx := context.TODO()
-	checkpoint := MockCheckpoint{}
+	checkpoint := NewMockCheckpoint(mockCtrl)
 	config := ConsumerConfig{
 		AWS:    AWSConfig{},
 		Stream: "some_stream",
 		Group:  "some_group",
 	}
 	handler := func(_ context.Context, m Message) error { return nil }
-	client, _ := NewConsumer(config, handler, &checkpoint)
-	streamWatcher := &MockStreamChecker{}
-	runnerFactory := &MockRunnerFactory{}
+	client, _ := NewConsumer(config, handler, checkpoint)
+	streamWatcher := NewMockStreamChecker(mockCtrl)
+	runnerFactory := NewMockRunnerFactory(mockCtrl)
 	client.streamWatcher = streamWatcher
 	client.runnerFactory = runnerFactory
 
-	streamWatcher.On("SetDeletingCallback", mock.Anything).Return()
-	streamWatcher.On("Run", mock.Anything).Return(fmt.Errorf("some error"))
-	runnerFactory.On("Run", mock.Anything).Return(nil)
+	streamWatcher.EXPECT().SetDeletingCallback(gomock.Any()).Return()
+	streamWatcher.EXPECT().Run(gomock.Any()).Return(fmt.Errorf("some error"))
+	runnerFactory.EXPECT().Run(gomock.Any()).Return(nil)
 
 	// Act
 	err := client.Run(ctx)
@@ -192,23 +213,26 @@ func TestConsumer_Run_FailedToRunRunnerFactory(t *testing.T) {
 	RegisterTestingT(t)
 
 	// Assign
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
 	ctx := context.TODO()
-	checkpoint := MockCheckpoint{}
+	checkpoint := NewMockCheckpoint(mockCtrl)
 	config := ConsumerConfig{
 		AWS:    AWSConfig{},
 		Stream: "some_stream",
 		Group:  "some_group",
 	}
 	handler := func(_ context.Context, m Message) error { return nil }
-	client, _ := NewConsumer(config, handler, &checkpoint)
-	streamWatcher := &MockStreamChecker{}
-	runnerFactory := &MockRunnerFactory{}
+	client, _ := NewConsumer(config, handler, checkpoint)
+	streamWatcher := NewMockStreamChecker(mockCtrl)
+	runnerFactory := NewMockRunnerFactory(mockCtrl)
 	client.streamWatcher = streamWatcher
 	client.runnerFactory = runnerFactory
 
-	streamWatcher.On("SetDeletingCallback", mock.Anything).Return()
-	streamWatcher.On("Run", mock.Anything).Return(nil)
-	runnerFactory.On("Run", mock.Anything).Return(fmt.Errorf("some error"))
+	streamWatcher.EXPECT().SetDeletingCallback(gomock.Any()).Return()
+	streamWatcher.EXPECT().Run(gomock.Any()).Return(nil)
+	runnerFactory.EXPECT().Run(gomock.Any()).Return(fmt.Errorf("some error"))
 
 	// Act
 	err := client.Run(ctx)
@@ -221,23 +245,26 @@ func TestConsumer_Run_RunsWithSuccess(t *testing.T) {
 	RegisterTestingT(t)
 
 	// Assign
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
 	ctx := context.TODO()
-	checkpoint := MockCheckpoint{}
+	checkpoint := NewMockCheckpoint(mockCtrl)
 	config := ConsumerConfig{
 		AWS:    AWSConfig{},
 		Stream: "some_stream",
 		Group:  "some_group",
 	}
 	handler := func(_ context.Context, m Message) error { return nil }
-	client, _ := NewConsumer(config, handler, &checkpoint)
-	streamWatcher := &MockStreamChecker{}
-	runnerFactory := &MockRunnerFactory{}
+	client, _ := NewConsumer(config, handler, checkpoint)
+	streamWatcher := NewMockStreamChecker(mockCtrl)
+	runnerFactory := NewMockRunnerFactory(mockCtrl)
 	client.streamWatcher = streamWatcher
 	client.runnerFactory = runnerFactory
 
-	streamWatcher.On("SetDeletingCallback", mock.Anything).Return()
-	streamWatcher.On("Run", mock.Anything).Return(nil)
-	runnerFactory.On("Run", mock.Anything).Return(nil)
+	streamWatcher.EXPECT().SetDeletingCallback(gomock.Any()).Return()
+	streamWatcher.EXPECT().Run(gomock.Any()).Return(nil)
+	runnerFactory.EXPECT().Run(gomock.Any()).Return(nil)
 
 	// Act
 	ctxTimeout, cancel := context.WithTimeout(ctx, time.Millisecond)
@@ -253,22 +280,25 @@ func TestConsumer_StartStop_WithSuccess(t *testing.T) {
 	RegisterTestingT(t)
 
 	// Assign
-	checkpoint := MockCheckpoint{}
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	checkpoint := NewMockCheckpoint(mockCtrl)
 	config := ConsumerConfig{
 		AWS:    AWSConfig{},
 		Stream: "some_stream",
 		Group:  "some_group",
 	}
 	handler := func(_ context.Context, m Message) error { return nil }
-	client, _ := NewConsumer(config, handler, &checkpoint)
-	streamWatcher := &MockStreamChecker{}
-	runnerFactory := &MockRunnerFactory{}
+	client, _ := NewConsumer(config, handler, checkpoint)
+	streamWatcher := NewMockStreamChecker(mockCtrl)
+	runnerFactory := NewMockRunnerFactory(mockCtrl)
 	client.streamWatcher = streamWatcher
 	client.runnerFactory = runnerFactory
 
-	streamWatcher.On("SetDeletingCallback", mock.Anything).Return()
-	streamWatcher.On("Run", mock.Anything).Return(nil)
-	runnerFactory.On("Run", mock.Anything).Return(nil)
+	streamWatcher.EXPECT().SetDeletingCallback(gomock.Any()).Return()
+	streamWatcher.EXPECT().Run(gomock.Any()).Return(nil)
+	runnerFactory.EXPECT().Run(gomock.Any()).Return(nil)
 
 	// Act
 	go func() {

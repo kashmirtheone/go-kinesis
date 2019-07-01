@@ -5,7 +5,5 @@ branches:
   only:
     - master
 script:
-  - go get -u github.com/golang/dep/cmd/dep
-  - go get -u github.com/vektra/mockery/.../
   - make install
   - make test

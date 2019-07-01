@@ -14,7 +14,7 @@ import (
 	"github.com/kashmirtheone/go-kinesis/checkpoint/memory"
 	"github.com/pkg/errors"
 
-	kinesis "github.com/kashmirtheone/go-kinesis"
+	kinesis "github.com/kashmirtheone/go-kinesis/kinesis"
 
 	logger "gitlab.com/vredens/go-logger"
 

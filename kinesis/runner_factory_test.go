@@ -3,9 +3,11 @@ package kinesis
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
-	"github.com/stretchr/testify/mock"
+	"github.com/golang/mock/gomock"
 
 	"github.com/pkg/errors"
 
@@ -19,8 +21,11 @@ func TestRunnerFactory_CheckShards_Failing(t *testing.T) {
 	RegisterTestingT(t)
 
 	// Assign
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
 	ctx := context.TODO()
-	kinesisAPI := &KinesisAPI{}
+	kinesisAPI := NewMockKinesisAPI(mockCtrl)
 	factory := runnerFactory{
 		client:      kinesisAPI,
 		config:      config,
@@ -31,7 +36,7 @@ func TestRunnerFactory_CheckShards_Failing(t *testing.T) {
 	input := &kinesis.ListShardsInput{
 		StreamName: aws.String(factory.config.Stream),
 	}
-	kinesisAPI.On("ListShards", input).Return(nil, errors.New("something failed"))
+	kinesisAPI.EXPECT().ListShards(input).Return(nil, errors.New("something failed"))
 
 	// Act
 	err := factory.checkShards(ctx)
@@ -44,8 +49,11 @@ func TestRunnerFactory_CheckShards_DoNothing(t *testing.T) {
 	RegisterTestingT(t)
 
 	// Assign
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
 	ctx := context.TODO()
-	kinesisAPI := &KinesisAPI{}
+	kinesisAPI := NewMockKinesisAPI(mockCtrl)
 	factory := runnerFactory{
 		client:      kinesisAPI,
 		config:      config,
@@ -57,7 +65,7 @@ func TestRunnerFactory_CheckShards_DoNothing(t *testing.T) {
 		StreamName: aws.String(factory.config.Stream),
 	}
 	output := &kinesis.ListShardsOutput{Shards: []*kinesis.Shard{}}
-	kinesisAPI.On("ListShards", input).Return(output, nil)
+	kinesisAPI.EXPECT().ListShards(input).Return(output, nil)
 
 	// Act
 	err := factory.checkShards(ctx)
@@ -70,8 +78,11 @@ func TestRunnerFactory_CheckShards_ShouldNotCreateRunner(t *testing.T) {
 	RegisterTestingT(t)
 
 	// Assign
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
 	ctx := context.TODO()
-	kinesisAPI := &KinesisAPI{}
+	kinesisAPI := NewMockKinesisAPI(mockCtrl)
 	factory := runnerFactory{
 		client:      kinesisAPI,
 		config:      config,
@@ -87,7 +98,7 @@ func TestRunnerFactory_CheckShards_ShouldNotCreateRunner(t *testing.T) {
 		StreamName: aws.String(factory.config.Stream),
 	}
 	output := &kinesis.ListShardsOutput{Shards: []*kinesis.Shard{{ShardId: aws.String(r.shardID), ParentShardId: aws.String(parent.shardID)}}}
-	kinesisAPI.On("ListShards", input).Return(output, nil)
+	kinesisAPI.EXPECT().ListShards(input).Return(output, nil)
 
 	// Act
 	err := factory.checkShards(ctx)
@@ -100,9 +111,13 @@ func TestRunnerFactory_CheckShards_CreateARunner(t *testing.T) {
 	RegisterTestingT(t)
 
 	// Assign
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
 	ctx := context.TODO()
-	checkpoint := &MockCheckpoint{}
-	kinesisAPI := &KinesisAPI{}
+	checkpoint := NewMockCheckpoint(mockCtrl)
+	kinesisAPI := NewMockKinesisAPI(mockCtrl)
+	runner := NewMockRunner(mockCtrl)
 	factory := runnerFactory{
 		client:      kinesisAPI,
 		config:      config,
@@ -111,6 +126,9 @@ func TestRunnerFactory_CheckShards_CreateARunner(t *testing.T) {
 		runners:     sync.Map{},
 		logger:      &dumbLogger{},
 		eventLogger: &dumbEventLogger{},
+		factory: func(shardID string, iteratorConfig ConsumerIterator) Runner {
+			return runner
+		},
 	}
 	input := &kinesis.ListShardsInput{
 		StreamName: aws.String(factory.config.Stream),
@@ -119,26 +137,33 @@ func TestRunnerFactory_CheckShards_CreateARunner(t *testing.T) {
 		ShardId: aws.String("some_shard_id"),
 	}
 	output := &kinesis.ListShardsOutput{Shards: []*kinesis.Shard{shard}}
-	kinesisAPI.On("ListShards", input).Return(output, nil)
-	checkpoint.On("Get", mock.Anything).Return("", errors.New("something failed"))
+	var started int32
+	kinesisAPI.EXPECT().ListShards(input).Return(output, nil)
+	runner.EXPECT().ShardID().Return("some_shard_id").Times(1)
+	runner.EXPECT().Start(gomock.Any()).DoAndReturn(func(...interface{}) error {
+		atomic.SwapInt32(&started, 1)
+		return nil
+	}).Times(1)
 
 	// Act
 	err := factory.checkShards(ctx)
-	//factory.Stop()
 
 	// Assert
-	runner, _ := factory.runners.Load("some_shard_id")
 	Expect(err).ToNot(HaveOccurred())
-	Expect(runner).ToNot(BeNil())
+	Eventually(func() bool { return atomic.LoadInt32(&started) == 1 }, time.Second).Should(BeTrue())
 }
 
 func TestRunnerFactory_CheckShards_CreateARunnerWithSameShardID(t *testing.T) {
 	RegisterTestingT(t)
 
 	// Assign
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
 	ctx := context.TODO()
-	checkpoint := &MockCheckpoint{}
-	kinesisAPI := &KinesisAPI{}
+	checkpoint := NewMockCheckpoint(mockCtrl)
+	kinesisAPI := NewMockKinesisAPI(mockCtrl)
+	runner := NewMockRunner(mockCtrl)
 	factory := runnerFactory{
 		client:      kinesisAPI,
 		options:     options,
@@ -147,6 +172,9 @@ func TestRunnerFactory_CheckShards_CreateARunnerWithSameShardID(t *testing.T) {
 		runners:     sync.Map{},
 		logger:      &dumbLogger{},
 		eventLogger: &dumbEventLogger{},
+		factory: func(shardID string, iteratorConfig ConsumerIterator) Runner {
+			return runner
+		},
 	}
 	input := &kinesis.ListShardsInput{
 		StreamName: aws.String(factory.config.Stream),
@@ -158,16 +186,21 @@ func TestRunnerFactory_CheckShards_CreateARunnerWithSameShardID(t *testing.T) {
 		ShardId: aws.String("some_shard_id"),
 	}
 	output := &kinesis.ListShardsOutput{Shards: []*kinesis.Shard{shard1, shard2}}
-	kinesisAPI.On("ListShards", input).Return(output, nil)
-	checkpoint.On("Get", mock.Anything).Return("", errors.New("something failed"))
+	var started int32
+	kinesisAPI.EXPECT().ListShards(input).Return(output, nil)
+	runner.EXPECT().ShardID().Return("some_shard_id").Times(1)
+	runner.EXPECT().Start(gomock.Any()).DoAndReturn(func(...interface{}) error {
+		atomic.SwapInt32(&started, 1)
+		return nil
+	}).Times(1)
 
 	// Act
 	err := factory.checkShards(ctx)
+	time.Sleep(time.Second)
 
 	// Assert
-	runner, _ := factory.runners.Load("some_shard_id")
 	Expect(err).ToNot(HaveOccurred())
-	Expect(runner).ToNot(BeNil())
+	Eventually(func() bool { return atomic.LoadInt32(&started) == 1 }, time.Second).Should(BeTrue())
 }
 
 func TestRunnerFactory_ShouldStart_WithSkipReshardingOrder(t *testing.T) {
@@ -197,6 +230,9 @@ func TestRunnerFactory_ShouldStart_WithoutShardParentID(t *testing.T) {
 	RegisterTestingT(t)
 
 	// Assign
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
 	factory := runnerFactory{
 		runners: sync.Map{},
 		config:  config,
@@ -219,6 +255,9 @@ func TestRunnerFactory_ShouldStart_WithUnexistingParentShardID(t *testing.T) {
 	RegisterTestingT(t)
 
 	// Assign
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
 	factory := runnerFactory{
 		runners: sync.Map{},
 		config:  config,
@@ -267,6 +306,9 @@ func TestRunnerFactory_ShouldStart_WithNotClosedParentShardID(t *testing.T) {
 	RegisterTestingT(t)
 
 	// Assign
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
 	factory := runnerFactory{
 		runners: sync.Map{},
 		config:  config,
@@ -319,6 +361,9 @@ func TestRunnerFactory_ShouldStart_WithUnexistingAdjacentShardID(t *testing.T) {
 	RegisterTestingT(t)
 
 	// Assign
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
 	factory := runnerFactory{
 		runners: sync.Map{},
 		config:  config,
@@ -345,6 +390,9 @@ func TestRunnerFactory_ShouldStart_WithClosedAdjacentShardID(t *testing.T) {
 	RegisterTestingT(t)
 
 	// Assign
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
 	factory := runnerFactory{
 		runners: sync.Map{},
 		config:  config,
@@ -375,6 +423,9 @@ func TestRunnerFactory_ShouldStart_WithNotClosedAdjacentShardID(t *testing.T) {
 	RegisterTestingT(t)
 
 	// Assign
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
 	factory := runnerFactory{
 		runners: sync.Map{},
 		config:  config,

@@ -4,6 +4,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang/mock/gomock"
+
 	. "github.com/onsi/gomega"
 )
 
@@ -11,6 +13,9 @@ func TestConfig_ProducerConfig_Validate_MissingStream(t *testing.T) {
 	RegisterTestingT(t)
 
 	// Assign
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
 	config := ProducerConfig{
 		Stream: "",
 		AWS: AWSConfig{
@@ -30,6 +35,9 @@ func TestConfig_ProducerConfig_Validate_Valid(t *testing.T) {
 	RegisterTestingT(t)
 
 	// Assign
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
 	config := ProducerConfig{
 		Stream: "some_stream",
 		AWS: AWSConfig{
@@ -49,6 +57,9 @@ func TestConfig_ConsumerConfig_Validate_MissingGroup(t *testing.T) {
 	RegisterTestingT(t)
 
 	// Assign
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
 	config := ConsumerConfig{
 		Stream: "",
 		Group:  "some_group",
@@ -69,6 +80,9 @@ func TestConfig_ConsumerConfig_Validate_MissingStream(t *testing.T) {
 	RegisterTestingT(t)
 
 	// Assign
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
 	config := ConsumerConfig{
 		Stream: "",
 		Group:  "some_group",
@@ -89,6 +103,9 @@ func TestConfig_ConsumerConfig_Validate_Valid(t *testing.T) {
 	RegisterTestingT(t)
 
 	// Assign
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
 	config := ConsumerConfig{
 		Stream: "some_stream",
 		Group:  "some_group",
@@ -109,6 +126,9 @@ func TestConfig_ConsumerConfig_Sanitize_All(t *testing.T) {
 	RegisterTestingT(t)
 
 	// Assign
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
 	config := ConsumerConfig{
 		Stream: "some_stream",
 		Group:  "some_group",
@@ -131,6 +151,9 @@ func TestConfig_ConsumerConfig_Sanitize_None(t *testing.T) {
 	RegisterTestingT(t)
 
 	// Assign
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
 	config := ConsumerConfig{
 		Stream:            "some_stream",
 		Group:             "some_group",

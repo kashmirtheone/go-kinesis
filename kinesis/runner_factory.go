@@ -32,6 +32,7 @@ type runnerFactory struct {
 	client      kinesisiface.KinesisAPI
 	logger      Logger
 	eventLogger EventLogger
+	factory     func(shardID string, iteratorConfig ConsumerIterator) Runner
 }
 
 func (f *runnerFactory) checkShards(ctx context.Context) error {
@@ -72,19 +73,7 @@ func (f *runnerFactory) checkShards(ctx context.Context) error {
 			}
 		}
 
-		r := &runner{
-			client:         f.client,
-			handler:        f.handler,
-			shardID:        aws.StringValue(shard.ShardId),
-			options:        f.options,
-			config:         f.config,
-			checkpoint:     f.checkpoint,
-			logger:         f.logger,
-			eventLogger:    f.eventLogger,
-			stopped:        make(chan struct{}),
-			iteratorConfig: iteratorConfig,
-		}
-
+		r := f.factory(aws.StringValue(shard.ShardId), iteratorConfig)
 		f.runners.Store(aws.StringValue(shard.ShardId), r)
 
 		go func() {

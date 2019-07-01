@@ -112,7 +112,7 @@ func NewConsumer(config ConsumerConfig, handler MessageHandler, checkpoint Check
 		eventLogger: c.eventLogger,
 	}
 
-	c.runnerFactory = &runnerFactory{
+	f := &runnerFactory{
 		runners:     sync.Map{},
 		client:      c.client,
 		config:      config,
@@ -122,6 +122,23 @@ func NewConsumer(config ConsumerConfig, handler MessageHandler, checkpoint Check
 		logger:      c,
 		eventLogger: c,
 	}
+
+	f.factory = func(shardID string, iteratorConfig ConsumerIterator) Runner {
+		return &runner{
+			client:         f.client,
+			handler:        f.handler,
+			shardID:        shardID,
+			options:        f.options,
+			config:         f.config,
+			checkpoint:     f.checkpoint,
+			logger:         f.logger,
+			eventLogger:    f.eventLogger,
+			stopped:        make(chan struct{}),
+			iteratorConfig: iteratorConfig,
+		}
+	}
+
+	c.runnerFactory = f
 
 	return c, nil
 }
