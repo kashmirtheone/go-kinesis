@@ -103,9 +103,9 @@ Kinesis tool uses your specified AWS profile (read [THIS](https://docs.aws.amazo
 
 For more information, nothing better than using the help parameter.
 ```bash
-me@ubuntu:~$ kinesis --help
+me@ubuntu:~$ go-kinesis --help
 Usage:
-  kinesis [command]
+  go-kinesis [command]
 
 Available Commands:
   head        The head utility displays the contents of kinesis stream to the standard output, starting in the oldest record.
@@ -119,11 +119,11 @@ Use "kinesis [command] --help" for more information about a command.
 ```
 
 ```bash
-me@ubuntu:~$ kinesis tail --help
+me@ubuntu:~$ go-kinesis tail --help
 The tail utility displays the contents of kinesis stream to the standard output, starting in the latest record.
 
 Usage:
-  kinesis tail [flags]
+  go-kinesis tail [flags]
 
 Flags:
   -e, --endpoint string         kinesis endpoint
@@ -138,9 +138,9 @@ Flags:
 
 Example
 ```bash
-me@ubuntu:~$ go install github.com/kashmirtheone/go-kinesis/tools/kinesis
+me@ubuntu:~$ go get -u github.com/kashmirtheone/go-kinesis
 me@ubuntu:~$ export AWS_PROFILE=some_aws_profile_here
-me@ubuntu:~$ kinesis head -s some_stream -n 20
+me@ubuntu:~$ go-kinesis head -s some_stream -n 20
 ```
 
 
