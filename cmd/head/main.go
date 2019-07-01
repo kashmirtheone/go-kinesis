@@ -16,7 +16,7 @@ import (
 
 	kinesis "github.com/kashmirtheone/go-kinesis/kinesis"
 
-	logger "gitlab.com/vredens/go-logger"
+	logger "gitlab.com/vredens/go-logger/v2"
 
 	"github.com/spf13/cobra"
 )
@@ -24,7 +24,7 @@ import (
 var (
 	termChan  = make(chan os.Signal, 1)
 	iteration int32
-	log       = logger.Spawn(logger.ConfigTags("consumer"))
+	log       = logger.Spawn().WithTags("tail")
 
 	stream             string
 	endpoint           string
@@ -38,23 +38,57 @@ var (
 // Command creates a new command.
 func Command() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "head",
-		Short: "The head utility displays the contents of kinesis stream to the standard output, starting in the oldest record.",
-		RunE:  Run,
+		Use:     "head",
+		Short:   "The head utility displays the contents of kinesis stream to the standard output, starting in the oldest record.",
+		RunE:    Run,
+		PreRunE: PreRun,
 	}
-	cmd.Flags().StringVarP(&stream, "stream", "s", "", "stream name")
-	cmd.Flags().StringVarP(&endpoint, "endpoint", "e", "", "kinesis endpoint")
-	cmd.Flags().StringVarP(&region, "region", "r", "", "aws region, by default it will use AWS_REGION from aws config")
-	cmd.Flags().IntVarP(&number, "number", "n", 0, "number of messages to show")
-	cmd.Flags().BoolVar(&logging, "logging", false, "enables logging, mute by default")
-	cmd.Flags().BoolVar(&gzipDecode, "gzip", false, "enables gzip decoder")
-	cmd.Flags().BoolVar(&skiReshardingOrder, "skip-resharding-order", false, "if enabled, consumer will skip ordering when resharding")
 
 	return cmd
 }
 
+// PreRun pre runs command.
+func PreRun(cmd *cobra.Command, args []string) (err error) {
+	stream, err = cmd.Flags().GetString("stream")
+	if err != nil {
+		return err
+	}
+
+	endpoint, err = cmd.Flags().GetString("endpoint")
+	if err != nil {
+		return err
+	}
+
+	region, err = cmd.Flags().GetString("region")
+	if err != nil {
+		return err
+	}
+
+	number, err = cmd.Flags().GetInt("number")
+	if err != nil {
+		return err
+	}
+
+	logging, err = cmd.Flags().GetBool("logging")
+	if err != nil {
+		return err
+	}
+
+	gzipDecode, err = cmd.Flags().GetBool("gzip")
+	if err != nil {
+		return err
+	}
+
+	skiReshardingOrder, err = cmd.Flags().GetBool("skip-resharding-order")
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // Run runs kinesis head
-func Run(cmd *cobra.Command, args []string) error {
+func Run(_ *cobra.Command, _ []string) error {
 	if err := os.Setenv("AWS_SDK_LOAD_CONFIG", "1"); err != nil {
 		return err
 	}
@@ -111,12 +145,10 @@ type Logger struct {
 // Log logs kinesis consumer.
 func (l *Logger) Log(level string, data map[string]interface{}, format string, args ...interface{}) {
 	switch level {
-	case kinesis.LevelDebug:
-		log.WithData(data).Debugf(format, args...)
-	case kinesis.LevelInfo:
-		log.WithData(data).Infof(format, args...)
+	case kinesis.LevelDebug, kinesis.LevelInfo:
+		log.WithData(data).Debug().Write(format, args...)
 	case kinesis.LevelError:
-		log.WithData(data).Errorf(format, args...)
+		log.WithData(data).Write(format, args...)
 	}
 }
 

@@ -8,13 +8,13 @@ import (
 	"strconv"
 	"syscall"
 
-	logger "gitlab.com/vredens/go-logger"
+	logger "gitlab.com/vredens/go-logger/v2"
 
-	kinesis "github.com/kashmirtheone/go-kinesis"
 	"github.com/kashmirtheone/go-kinesis/checkpoint/memory"
+	kinesis "github.com/kashmirtheone/go-kinesis/kinesis"
 )
 
-var log = logger.Spawn(logger.ConfigTags("kinesis-consumer"))
+var log = logger.Spawn().WithTags("kinesis-consumer")
 
 func handler(_ context.Context, message kinesis.Message) error {
 	fmt.Printf("partition: %s, data: %s\n", message.PartitionKey, string(message.Data))
@@ -28,18 +28,16 @@ type Logger struct {
 // Log logs kinesis consumer.
 func (l *Logger) Log(level string, data map[string]interface{}, format string, args ...interface{}) {
 	switch level {
-	case kinesis.LevelDebug:
-		log.WithData(data).Debugf(format, args...)
-	case kinesis.LevelInfo:
-		log.WithData(data).Infof(format, args...)
+	case kinesis.LevelDebug, kinesis.LevelInfo:
+		log.WithData(data).Debug().Write(format, args...)
 	case kinesis.LevelError:
-		log.WithData(data).Errorf(format, args...)
+		log.WithData(data).Write(format, args...)
 	}
 }
 
 // LogEvent logs events kinesis consumer.
 func (l *Logger) LogEvent(event kinesis.EventLog) {
-	log.WithData(logger.KV{"event": event.Event, "elapse": fmt.Sprintf("%v", event.Elapse)}).Debugf("event logger triggered")
+	log.WithData(logger.KV{"event": event.Event, "elapse": fmt.Sprintf("%v", event.Elapse)}).Write("event logger triggered")
 }
 
 func main() {

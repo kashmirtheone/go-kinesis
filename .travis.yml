@@ -4,6 +4,7 @@ go:
 branches:
   only:
     - master
+    - /^v-/
 script:
   - make install
   - make test

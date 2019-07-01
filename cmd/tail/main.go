@@ -14,7 +14,7 @@ import (
 
 	"github.com/pkg/errors"
 
-	logger "gitlab.com/vredens/go-logger"
+	logger "gitlab.com/vredens/go-logger/v2"
 
 	"github.com/kashmirtheone/go-kinesis/checkpoint/memory"
 
@@ -26,7 +26,7 @@ import (
 var (
 	termChan  = make(chan os.Signal, 1)
 	iteration int32
-	log       = logger.Spawn(logger.ConfigTags("consumer"))
+	log       = logger.Spawn().WithTags("tail")
 
 	stream             string
 	endpoint           string
@@ -42,29 +42,70 @@ var (
 // Command creates a new command.
 func Command() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "tail",
-		Short: "The tail utility displays the contents of kinesis stream to the standard output, starting in the latest record.",
-		RunE:  Run,
+		Use:     "tail",
+		Short:   "The tail utility displays the contents of kinesis stream to the standard output, starting in the latest record.",
+		RunE:    Run,
+		PreRunE: PreRun,
 	}
-	cmd.Flags().StringVarP(&stream, "stream", "s", "", "stream name")
-	cmd.Flags().StringVarP(&endpoint, "endpoint", "e", "", "kinesis endpoint")
-	cmd.Flags().StringVarP(&region, "region", "r", "", "aws region, by default it will use AWS_REGION from aws config")
-	cmd.Flags().IntVarP(&number, "number", "n", 0, "number of messages to show")
-	cmd.Flags().BoolVar(&logging, "logging", false, "enables logging, mute by default")
-	cmd.Flags().BoolVar(&gzipDecode, "gzip", false, "enables gzip decoder")
-	cmd.Flags().BoolVar(&skiReshardingOrder, "skip-resharding-order", false, "if enabled, consumer will skip ordering when resharding")
-	cmd.Flags().StringVarP(&sequence, "sequence", "", "", "specific sequence number, you also need to define a shard id ")
-	cmd.Flags().StringVarP(&shard, "shard", "", "", "shard id ")
+
+	cmd.Flags().StringVar(&sequence, "sequence", "", "specific sequence number, you also need to define a shard id")
+	cmd.Flags().StringVar(&shard, "shard", "", "shard id")
 
 	return cmd
 }
 
-// Run runs kinesis tail
-func Run(cmd *cobra.Command, args []string) error {
-	if err := os.Setenv("AWS_SDK_LOAD_CONFIG", "1"); err != nil {
+// PreRun pre runs command.
+func PreRun(cmd *cobra.Command, args []string) (err error) {
+	stream, err = cmd.Flags().GetString("stream")
+	if err != nil {
 		return err
 	}
 
+	endpoint, err = cmd.Flags().GetString("endpoint")
+	if err != nil {
+		return err
+	}
+
+	region, err = cmd.Flags().GetString("region")
+	if err != nil {
+		return err
+	}
+
+	number, err = cmd.Flags().GetInt("number")
+	if err != nil {
+		return err
+	}
+
+	logging, err = cmd.Flags().GetBool("logging")
+	if err != nil {
+		return err
+	}
+
+	gzipDecode, err = cmd.Flags().GetBool("gzip")
+	if err != nil {
+		return err
+	}
+
+	skiReshardingOrder, err = cmd.Flags().GetBool("skip-resharding-order")
+	if err != nil {
+		return err
+	}
+
+	sequence, err = cmd.Flags().GetString("sequence")
+	if err != nil {
+		return err
+	}
+
+	shard, err = cmd.Flags().GetString("shard")
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// Run runs kinesis tail
+func Run(_ *cobra.Command, _ []string) error {
 	config := kinesis.ConsumerConfig{
 		Group:  "tail",
 		Stream: stream,
@@ -127,12 +168,10 @@ type Logger struct {
 // Log logs kinesis consumer.
 func (l *Logger) Log(level string, data map[string]interface{}, format string, args ...interface{}) {
 	switch level {
-	case kinesis.LevelDebug:
-		log.WithData(data).Debugf(format, args...)
-	case kinesis.LevelInfo:
-		log.WithData(data).Infof(format, args...)
+	case kinesis.LevelDebug, kinesis.LevelInfo:
+		log.WithData(data).Debug().Write(format, args...)
 	case kinesis.LevelError:
-		log.WithData(data).Errorf(format, args...)
+		log.WithData(data).Write(format, args...)
 	}
 }
 
