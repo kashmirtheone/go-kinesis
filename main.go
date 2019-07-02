@@ -21,10 +21,10 @@ var (
 
 func main() {
 	rootCmd := &cobra.Command{
-		Use:           "go-kinesis",
-		SilenceErrors: true,
-		SilenceUsage:  true,
-		PreRunE:       PreRun,
+		Use:               "go-kinesis",
+		SilenceErrors:     true,
+		SilenceUsage:      true,
+		PersistentPreRunE: PreRun,
 	}
 
 	rootCmd.AddCommand(tail.Command())
