@@ -2,6 +2,7 @@ package kinesis
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -697,4 +698,67 @@ func TestRunner_Stop_WithSuccess(t *testing.T) {
 	// Assert
 	Expect(err).ToNot(HaveOccurred())
 	Expect(closed).To(BeTrue())
+}
+
+func TestRunner_Process_FailsOnSecondRecord(t *testing.T) {
+	RegisterTestingT(t)
+
+	// Assign
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	ctx := context.TODO()
+	checkpoint := NewMockCheckpoint(mockCtrl)
+	kinesisAPI := NewMockKinesisAPI(mockCtrl)
+	var count int
+	r := runner{
+		client:      kinesisAPI,
+		checkpoint:  checkpoint,
+		config:      config,
+		options:     options,
+		logger:      &dumbLogger{},
+		eventLogger: &dumbEventLogger{},
+		stopped:     make(chan struct{}),
+		handler: func(_ context.Context, msg Message) error {
+			if count > 0 {
+				return fmt.Errorf("cenas")
+			}
+
+			count++
+			return nil
+		},
+		shutdown: func() {},
+	}
+	getShardIteratorInput := &kinesis.GetShardIteratorInput{
+		ShardId:           aws.String(r.shardID),
+		StreamName:        aws.String(r.config.Stream),
+		ShardIteratorType: aws.String(kinesis.ShardIteratorTypeTrimHorizon),
+	}
+	getShardIteratorInput2 := &kinesis.GetShardIteratorInput{
+		ShardId:                aws.String(r.shardID),
+		StreamName:             aws.String(r.config.Stream),
+		ShardIteratorType:      aws.String(kinesis.ShardIteratorTypeAfterSequenceNumber),
+		StartingSequenceNumber: aws.String("some_sequence_number"),
+	}
+	getShardIteratorOutput := &kinesis.GetShardIteratorOutput{ShardIterator: aws.String("some_shard_iterator")}
+	getRecordsInput := &kinesis.GetRecordsInput{
+		ShardIterator: getShardIteratorOutput.ShardIterator,
+	}
+	record := &kinesis.Record{PartitionKey: aws.String("some_partition"), Data: []byte("some_data"), SequenceNumber: aws.String("some_sequence_number")}
+	getRecordsOutput := &kinesis.GetRecordsOutput{NextShardIterator: aws.String("some_shard_iterator"), Records: []*kinesis.Record{record, record}}
+	getRecordsOutput2 := &kinesis.GetRecordsOutput{}
+	checkpoint.EXPECT().Get(r.checkpointIdentifier()).Return("", nil)
+	kinesisAPI.EXPECT().GetShardIterator(getShardIteratorInput).Return(getShardIteratorOutput, nil)
+	kinesisAPI.EXPECT().GetRecords(getRecordsInput).Return(getRecordsOutput, nil)
+	kinesisAPI.EXPECT().GetShardIterator(getShardIteratorInput2).Return(getShardIteratorOutput, nil)
+	checkpoint.EXPECT().Set(r.checkpointIdentifier(), "some_sequence_number").Return(nil)
+	kinesisAPI.EXPECT().GetRecords(getRecordsInput).Return(getRecordsOutput2, nil)
+
+	// Act
+	err := r.process(ctx)
+
+	// Assert
+	Expect(err).ToNot(HaveOccurred())
+	Expect(r.iteratorConfig.Sequence).ToNot(BeZero())
+	Expect(r.iteratorConfig.Type).To(Equal(IteratorTypeAfterSequence))
 }

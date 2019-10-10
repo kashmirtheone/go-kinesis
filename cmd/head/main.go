@@ -173,7 +173,8 @@ func handler() kinesis.MessageHandler {
 			}
 		}
 
-		f.WriteString(string(msg) + "\n")
+		f.Write(msg)
+		f.WriteString("\n")
 		f.Flush()
 
 		atomic.AddInt32(&iteration, 1)

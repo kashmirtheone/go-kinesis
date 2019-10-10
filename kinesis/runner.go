@@ -186,7 +186,7 @@ func (r *runner) process(ctx context.Context) error {
 				break
 			}
 
-			r.iteratorConfig.Sequence = aws.StringValue(record.SequenceNumber)
+			r.setIteratorSequence(aws.StringValue(record.SequenceNumber))
 
 			if r.options.checkpointStrategy == AfterRecord {
 				r.logger.Log(LevelDebug, nil, "setting checkpoint")
