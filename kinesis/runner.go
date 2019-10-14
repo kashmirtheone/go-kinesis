@@ -3,6 +3,7 @@ package kinesis
 import (
 	"context"
 	"fmt"
+	"runtime/debug"
 	"sync/atomic"
 	"time"
 
@@ -232,7 +233,7 @@ func (r *runner) processRecord(record *kinesis.Record) (err error) {
 	start := time.Now()
 	defer func() {
 		if p := recover(); p != nil {
-			err = errors.Wrap(fmt.Errorf("%s", p), "runner terminated due a panic")
+			err = errors.Wrap(fmt.Errorf("%v", p), fmt.Sprintf("runner terminated due a panic: %s", debug.Stack()))
 		}
 
 		if err != nil {
